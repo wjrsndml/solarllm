@@ -1,12 +1,20 @@
-import MainLayout from './components/Layout/MainLayout';
-import ChatInterface from './components/Chat/ChatInterface';
-import './App.css';
+import { ConfigProvider } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
+import Chat from './components/Chat';
+import styled from '@emotion/styled';
+
+const AppContainer = styled.div`
+  min-height: 100vh;
+  background: #ffffff;
+`;
 
 function App() {
   return (
-    <MainLayout>
-      <ChatInterface />
-    </MainLayout>
+    <ConfigProvider locale={zhCN}>
+      <AppContainer>
+        <Chat />
+      </AppContainer>
+    </ConfigProvider>
   );
 }
 
