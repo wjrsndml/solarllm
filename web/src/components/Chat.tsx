@@ -1,122 +1,188 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Input, Button, message, List, Typography, Select, Spin } from 'antd';
-import { SendOutlined, PlusOutlined } from '@ant-design/icons';
+import { Input, Button, message, Typography, Select, Spin, Layout, Menu, Avatar, Card, Tooltip, Switch, Badge, Empty, Divider, Tabs } from 'antd';
+import { SendOutlined, PlusOutlined, BulbOutlined, BulbFilled, MenuFoldOutlined, MenuUnfoldOutlined, UserOutlined, RobotOutlined } from '@ant-design/icons';
 import styled from '@emotion/styled';
 import { Message, Conversation, Model, StreamChunk } from '../types/chat';
 import { sendMessage, createConversation, getHistory, getModels } from '../api/chat';
+import InfoCards from './Chat/InfoCards';
+import Glossary from './Chat/Glossary';
+import Resources from './Chat/Resources';
+import SolarIcon from './Layout/SolarIcon';
 
-const { Text } = Typography;
+const { Text, Title } = Typography;
 const { Option } = Select;
+const { Header, Sider, Content, Footer } = Layout;
+const { TextArea } = Input;
+const { TabPane } = Tabs;
 
-const AppContainer = styled.div`
-  display: flex;
+const StyledLayout = styled(Layout)`
+  min-height: 100vh;
+`;
+
+const StyledSider = styled(Sider)`
+  overflow: auto;
   height: 100vh;
+  position: fixed;
+  left: 0;
+  z-index: 10;
+  
+  .ant-layout-sider-children {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .logo {
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    margin: 16px 0;
+  }
+  
+  .logo-icon {
+    font-size: 24px;
+    margin-right: 8px;
+    color: #ffd666;
+  }
 `;
 
-const Sidebar = styled.div`
-  width: 250px;
-  background: #f5f5f5;
-  padding: 20px;
-  border-right: 1px solid #e8e8e8;
-  display: flex;
-  flex-direction: column;
-`;
-
-const StyledList = styled.div`
+const ConversationList = styled.div`
   flex: 1;
   overflow-y: auto;
-  margin-top: 20px;
-
+  padding: 0 12px;
+  
   .conversation-item {
-    padding: 10px;
-    border-radius: 4px;
-    cursor: pointer;
     margin-bottom: 8px;
+    border-radius: 6px;
+    overflow: hidden;
+    transition: all 0.3s;
     
     &:hover {
-      background: #e6f7ff;
-    }
-    
-    &.active {
-      background: #1890ff;
-      color: white;
+      background: rgba(255, 255, 255, 0.1);
     }
   }
 `;
 
-const ChatContainer = styled.div`
-  flex: 1;
+const MainLayout = styled(Layout)<{ collapsed: boolean }>`
+  margin-left: ${props => props.collapsed ? '80px' : '250px'};
+  transition: all 0.2s;
+`;
+
+const StyledHeader = styled(Header)`
+  background: transparent;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  backdrop-filter: blur(8px);
+`;
+
+const ChatContent = styled(Content)`
+  margin: 0 auto;
+  max-width: 900px;
+  width: 100%;
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  padding: 20px;
-  max-width: 800px;
-  margin: 0 auto;
-  width: 100%;
+  height: calc(100vh - 128px);
 `;
 
 const MessagesContainer = styled.div`
   flex: 1;
   overflow-y: auto;
-  margin-bottom: 20px;
-`;
-
-const MessageItem = styled.div<{ isUser: boolean }>`
-  margin-bottom: 20px;
-  background: ${props => props.isUser ? '#e6f7ff' : '#f5f5f5'};
-  border-radius: 8px;
-  padding: 20px;
-`;
-
-const InputContainer = styled.div`
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  background: white;
-  padding: 10px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-`;
-
-const Header = styled.div`
-  margin-bottom: 30px;
+  padding-right: 8px;
+  margin-bottom: 24px;
   
-  h1 {
-    margin: 0;
-    font-size: 24px;
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 3px;
   }
 `;
 
-const StyledInput = styled(Input)`
-  &.ant-input {
-    border: none;
-    box-shadow: none;
-    font-size: 16px;
-    
-    &:focus {
-      box-shadow: none;
-    }
+const MessageCard = styled(Card)<{ isUser: boolean }>`
+  margin-bottom: 16px;
+  border-radius: 12px;
+  max-width: 85%;
+  ${props => props.isUser ? 'margin-left: auto;' : 'margin-right: auto;'}
+  
+  .ant-card-body {
+    padding: 12px 16px;
   }
 `;
 
-const ModelSelect = styled(Select)`
-  width: 200px;
-  margin-bottom: 20px;
+const MessageHeader = styled.div`
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+`;
+
+const MessageContent = styled(Text)`
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 15px;
+  line-height: 1.6;
 `;
 
 const ReasoningContent = styled.div`
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.1);
   color: #8c8c8c;
   font-style: italic;
-  margin-top: 8px;
-  white-space: pre-wrap;
+  font-size: 14px;
 `;
 
-const StreamingContent = styled.div<{ isReasoning?: boolean }>`
-  color: ${props => props.isReasoning ? '#8c8c8c' : 'inherit'};
-  font-style: ${props => props.isReasoning ? 'italic' : 'normal'};
-  white-space: pre-wrap;
+const InputContainer = styled.div`
+  position: sticky;
+  bottom: 0;
+  background: transparent;
+  backdrop-filter: blur(8px);
+  padding: 16px 0;
 `;
 
-const Chat: React.FC = () => {
+const StyledFooter = styled(Footer)`
+  text-align: center;
+  padding: 12px 50px;
+`;
+
+const ThemeSwitch = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const ModelSelectWrapper = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+`;
+
+const EmptyStateContainer = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  opacity: 0.8;
+`;
+
+interface ChatProps {
+  isDarkMode: boolean;
+  toggleTheme: () => void;
+}
+
+const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
   const [inputMessage, setInputMessage] = useState('');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
@@ -125,6 +191,7 @@ const Chat: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState('deepseek-chat');
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingReasoning, setStreamingReasoning] = useState('');
+  const [collapsed, setCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isStreamingRef = useRef(false);
 
@@ -246,98 +313,262 @@ const Chat: React.FC = () => {
     }
   };
 
+  const handleTermClick = (term: string) => {
+    if (!currentConversation) {
+      handleNewConversation().then(() => {
+        setInputMessage(`请解释太阳能电池中的"${term}"概念`);
+      });
+    } else {
+      setInputMessage(`请解释太阳能电池中的"${term}"概念`);
+    }
+  };
+
   const renderMessages = () => {
-    if (!currentConversation) return null;
+    if (!currentConversation) return (
+      <EmptyStateContainer>
+        <Empty 
+          image={Empty.PRESENTED_IMAGE_SIMPLE} 
+          description="选择或创建一个对话开始交流"
+        />
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />} 
+          onClick={handleNewConversation}
+          style={{ marginTop: 16 }}
+        >
+          新对话
+        </Button>
+      </EmptyStateContainer>
+    );
+
+    if (currentConversation.messages.length === 0) return (
+      <EmptyStateContainer>
+        <Title level={4} style={{ marginBottom: 24 }}>欢迎使用太阳能电池智能助手</Title>
+        <Text style={{ marginBottom: 16 }}>您可以询问任何关于太阳能电池的问题</Text>
+        
+        <Tabs defaultActiveKey="info" style={{ width: '100%', maxWidth: 800 }}>
+          <TabPane tab="知识卡片" key="info">
+            <InfoCards isDarkMode={isDarkMode} />
+          </TabPane>
+          <TabPane tab="术语表" key="glossary">
+            <Glossary isDarkMode={isDarkMode} onTermClick={handleTermClick} />
+          </TabPane>
+          <TabPane tab="学习资源" key="resources">
+            <Resources isDarkMode={isDarkMode} />
+          </TabPane>
+        </Tabs>
+      </EmptyStateContainer>
+    );
 
     return (
       <>
         {currentConversation.messages.map((msg, index) => (
-          <MessageItem key={index} isUser={msg.role === 'user'}>
-            {msg.content}
+          <MessageCard 
+            key={index} 
+            isUser={msg.role === 'user'}
+            bordered={false}
+            style={{ 
+              background: msg.role === 'user' 
+                ? (isDarkMode ? '#177ddc' : '#e6f7ff') 
+                : (isDarkMode ? '#1f1f1f' : '#f5f5f5')
+            }}
+          >
+            <MessageHeader>
+              <Avatar 
+                icon={msg.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
+                style={{ 
+                  background: msg.role === 'user' 
+                    ? (isDarkMode ? '#0050b3' : '#1890ff') 
+                    : (isDarkMode ? '#434343' : '#8c8c8c')
+                }}
+              />
+              <Text strong style={{ marginLeft: 8, color: msg.role === 'user' && !isDarkMode ? '#1890ff' : undefined }}>
+                {msg.role === 'user' ? '您' : '太阳能助手'}
+              </Text>
+            </MessageHeader>
+            
+            <MessageContent>
+              {msg.content}
+            </MessageContent>
+            
             {msg.reasoning_content && (
-              <ReasoningContent>{msg.reasoning_content}</ReasoningContent>
+              <ReasoningContent>
+                <Text type="secondary">推理过程：</Text>
+                <div>{msg.reasoning_content}</div>
+              </ReasoningContent>
             )}
-          </MessageItem>
+          </MessageCard>
         ))}
+        
         {isStreamingRef.current && (
-          <MessageItem isUser={false}>
+          <MessageCard 
+            isUser={false}
+            bordered={false}
+            style={{ background: isDarkMode ? '#1f1f1f' : '#f5f5f5' }}
+          >
+            <MessageHeader>
+              <Avatar 
+                icon={<RobotOutlined />}
+                style={{ background: isDarkMode ? '#434343' : '#8c8c8c' }}
+              />
+              <Text strong style={{ marginLeft: 8 }}>太阳能助手</Text>
+              <Badge status="processing" style={{ marginLeft: 8 }} />
+            </MessageHeader>
+            
             {streamingReasoning && (
-              <StreamingContent isReasoning>{streamingReasoning}</StreamingContent>
+              <ReasoningContent>
+                <Text type="secondary">推理过程：</Text>
+                <div>{streamingReasoning}</div>
+              </ReasoningContent>
             )}
+            
             {streamingContent && (
-              <StreamingContent>{streamingContent}</StreamingContent>
+              <MessageContent>{streamingContent}</MessageContent>
             )}
-          </MessageItem>
+          </MessageCard>
         )}
+        <div ref={messagesEndRef} />
       </>
     );
   };
 
   return (
-    <AppContainer>
-      <Sidebar>
+    <StyledLayout>
+      <StyledSider 
+        width={250} 
+        collapsible 
+        collapsed={collapsed}
+        trigger={null}
+      >
+        <div className="logo">
+          <SolarIcon className="logo-icon" />
+          {!collapsed && <span>太阳能电池助手</span>}
+        </div>
+        
         <Button
           type="primary"
           icon={<PlusOutlined />}
           onClick={handleNewConversation}
           block
+          style={{ margin: '0 12px 16px', width: 'calc(100% - 24px)' }}
         >
-          新对话
+          {collapsed ? '' : '新对话'}
         </Button>
-        <StyledList>
+        
+        <ConversationList>
           {conversations.map(item => (
             <div
               key={item.id}
-              className={`conversation-item ${currentConversation?.id === item.id ? 'active' : ''}`}
+              className="conversation-item"
               onClick={() => setCurrentConversation(item)}
+              style={{
+                padding: collapsed ? '12px 8px' : '12px 16px',
+                background: currentConversation?.id === item.id 
+                  ? 'rgba(24, 144, 255, 0.2)' 
+                  : 'transparent',
+                cursor: 'pointer'
+              }}
             >
-              <Text ellipsis>{item.title}</Text>
+              <Text 
+                ellipsis 
+                style={{ 
+                  color: currentConversation?.id === item.id 
+                    ? '#1890ff' 
+                    : 'rgba(255, 255, 255, 0.85)'
+                }}
+              >
+                {item.title}
+              </Text>
             </div>
           ))}
-        </StyledList>
-      </Sidebar>
+        </ConversationList>
+      </StyledSider>
       
-      <ChatContainer>
-        <Header>
-          <h1>欢迎讨论太阳能电池相关的问题</h1>
-          <ModelSelect
-            value={selectedModel}
-            onChange={(value) => setSelectedModel(value as string)}
-            placeholder="选择模型"
-          >
-            {models.map(model => (
-              <Option key={model.id} value={model.id} title={model.description}>
-                {model.name}
-              </Option>
-            ))}
-          </ModelSelect>
-        </Header>
-        
-        <MessagesContainer>
-          {renderMessages()}
-          <div ref={messagesEndRef} />
-        </MessagesContainer>
-        
-        <InputContainer>
-          <StyledInput
-            placeholder="请输入您的问题"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onPressEnter={handleSend}
-            disabled={isLoading || !currentConversation}
+      <MainLayout collapsed={collapsed}>
+        <StyledHeader>
+          <Button
+            type="text"
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setCollapsed(!collapsed)}
+            style={{ fontSize: '16px', width: 64, height: 64 }}
           />
-          <Button 
-            type="primary" 
-            icon={<SendOutlined />}
-            onClick={handleSend}
-            loading={isLoading}
-            disabled={!currentConversation}
-          >
-            发送
-          </Button>
-        </InputContainer>
-      </ChatContainer>
-    </AppContainer>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+            <ModelSelectWrapper>
+              <Text strong>模型：</Text>
+              <Select
+                value={selectedModel}
+                onChange={(value) => setSelectedModel(value as string)}
+                style={{ width: 180 }}
+              >
+                {models.map(model => (
+                  <Option key={model.id} value={model.id} title={model.description}>
+                    {model.name}
+                  </Option>
+                ))}
+              </Select>
+            </ModelSelectWrapper>
+            
+            <ThemeSwitch>
+              <Tooltip title={isDarkMode ? '切换到亮色模式' : '切换到暗色模式'}>
+                <Switch
+                  checked={isDarkMode}
+                  onChange={toggleTheme}
+                  checkedChildren={<BulbFilled />}
+                  unCheckedChildren={<BulbOutlined />}
+                />
+              </Tooltip>
+            </ThemeSwitch>
+          </div>
+        </StyledHeader>
+        
+        <ChatContent>
+          <MessagesContainer>
+            {renderMessages()}
+          </MessagesContainer>
+          
+          <InputContainer>
+            <Card bordered={false} bodyStyle={{ padding: '12px 16px' }}>
+              <TextArea
+                placeholder="请输入您的问题..."
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onPressEnter={(e) => {
+                  if (!e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                disabled={isLoading || !currentConversation}
+                autoSize={{ minRows: 1, maxRows: 6 }}
+                style={{ 
+                  border: 'none', 
+                  boxShadow: 'none', 
+                  padding: '8px 0',
+                  fontSize: '16px',
+                  resize: 'none'
+                }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                <Button 
+                  type="primary" 
+                  icon={<SendOutlined />}
+                  onClick={handleSend}
+                  loading={isLoading}
+                  disabled={!currentConversation || !inputMessage.trim()}
+                >
+                  发送
+                </Button>
+              </div>
+            </Card>
+          </InputContainer>
+        </ChatContent>
+        
+        <StyledFooter>
+          <Text type="secondary">太阳能电池智能助手 &copy; {new Date().getFullYear()}</Text>
+        </StyledFooter>
+      </MainLayout>
+    </StyledLayout>
   );
 };
 
