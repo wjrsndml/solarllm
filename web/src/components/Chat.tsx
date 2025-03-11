@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Input, Button, message, Typography, Select, Spin, Layout, Menu, Avatar, Card, Tooltip, Switch, Badge, Empty, Divider, Tabs } from 'antd';
-import { SendOutlined, PlusOutlined, BulbOutlined, BulbFilled, MenuFoldOutlined, MenuUnfoldOutlined, UserOutlined, RobotOutlined, CaretRightOutlined, StopOutlined, DownOutlined, UpOutlined, FileTextOutlined } from '@ant-design/icons';
+import { SendOutlined, PlusOutlined, BulbOutlined, BulbFilled, MenuFoldOutlined, MenuUnfoldOutlined, UserOutlined, RobotOutlined, CaretRightOutlined, StopOutlined, DownOutlined, UpOutlined, FileTextOutlined, ExperimentOutlined } from '@ant-design/icons';
+import { useTabContext } from '../contexts/TabContext';
 import styled from '@emotion/styled';
 import { Message, Conversation, Model, StreamChunk, ContextInfo } from '../types/chat';
 import { sendMessage, createConversation, getHistory, getModels } from '../api/chat';
@@ -246,6 +247,8 @@ interface ChatProps {
 }
 
 const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
+  // 获取Tab上下文以便切换到模拟器标签页
+  const { switchToTab } = useTabContext();
   const [inputMessage, setInputMessage] = useState('');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
@@ -707,6 +710,16 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
               </Select>
             </ModelSelectWrapper>
             
+            <Tooltip title="进入太阳能电池参数模拟器">
+              <Button
+                type="primary"
+                icon={<ExperimentOutlined />}
+                onClick={() => switchToTab('simulator')}
+              >
+                参数模拟
+              </Button>
+            </Tooltip>
+            
             <ThemeSwitch>
               <Tooltip title={isDarkMode ? '切换到亮色模式' : '切换到暗色模式'}>
                 <Switch
@@ -821,4 +834,4 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
   );
 };
 
-export default Chat; 
+export default Chat;

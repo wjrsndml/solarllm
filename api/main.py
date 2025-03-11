@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
@@ -15,6 +15,12 @@ from embed import TextEmbedding  # 导入嵌入模块
 
 # 加载环境变量
 load_dotenv()
+
+# 导入太阳能电池参数预测功能
+from mlutil import predict_solar_params
+import base64
+import io
+from matplotlib.figure import Figure
 
 app = FastAPI()
 
@@ -300,9 +306,84 @@ async def get_models():
 async def health_check():
     return {"status": "ok"} 
 
+# 太阳能电池参数模型
+class SolarParams(BaseModel):
+    Si_thk: float
+    t_SiO2: float
+    t_polySi_rear_P: float
+    front_junc: float
+    rear_junc: float
+    resist_rear: float
+    Nd_top: float
+    Nd_rear: float
+    Nt_polySi_top: float
+    Nt_polySi_rear: float
+    Dit_Si_SiOx: float
+    Dit_SiOx_Poly: float
+    Dit_top: float
+
+# 获取默认参数
+@app.get("/api/solar/default-params")
+async def get_default_params():
+    default_params = {
+        'Si_thk': 180,
+        't_SiO2': 1.4,
+        't_polySi_rear_P': 100,
+        'front_junc': 0.5,
+        'rear_junc': 0.5,
+        'resist_rear': 100,
+        'Nd_top': 1e20,
+        'Nd_rear': 1e20,
+        'Nt_polySi_top': 1e20,
+        'Nt_polySi_rear': 1e20,
+        'Dit_Si_SiOx': 1e10,
+        'Dit_SiOx_Poly': 1e10,
+        'Dit_top': 1e10
+    }
+    return default_params
+
+# 太阳能电池参数预测
+@app.post("/api/solar/predict")
+async def predict_params(params: SolarParams):
+    try:
+        
+        # 将参数转为字典
+        input_params = {
+            'Si_thk': params.Si_thk,
+            't_SiO2': params.t_SiO2, 
+            't_polySi_rear_P': params.t_polySi_rear_P,
+            'front_junc': params.front_junc,
+            'rear_junc': params.rear_junc,
+            'resist_rear': params.resist_rear,
+            'Nd_top': params.Nd_top,
+            'Nd_rear': params.Nd_rear,
+            'Nt_polySi_top': params.Nt_polySi_top,
+            'Nt_polySi_rear': params.Nt_polySi_rear,
+            'Dit Si-SiOx': params.Dit_Si_SiOx,
+            'Dit SiOx-Poly': params.Dit_SiOx_Poly,
+            'Dit top': params.Dit_top
+        }
+        
+        # 预测参数
+        predictions, fig = predict_solar_params(input_params)
+        
+        # 将图像转换为base64编码
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        
+        # 返回预测结果和图像
+        return {
+            "predictions": predictions,
+            "jv_curve": img_base64
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # 直接运行入口点，方便在 IDE 中调试
 if __name__ == "__main__":
     import uvicorn
     print("正在启动调试服务器...")
     print("API 密钥:", os.getenv("DEEPSEEK_API_KEY")[:5] + "..." if os.getenv("DEEPSEEK_API_KEY") else "未设置")
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run(app, host="0.0.0.0", port=8000)
