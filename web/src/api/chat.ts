@@ -1,6 +1,9 @@
 import { Message, ChatResponse, Conversation, Model, StreamChunk } from '../types/chat';
 
-const API_BASE_URL = 'http://localhost:8000';
+// 动态获取API基础URL，解决跨域问题
+const API_BASE_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:8000' 
+  : `${window.location.protocol}//${window.location.hostname}:8000`;
 
 export async function sendMessage(
   messages: Message[],

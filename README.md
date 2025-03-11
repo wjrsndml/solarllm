@@ -1,135 +1,136 @@
-# 太阳能电池智能助手
+# SolarLLM - 太阳能领域智能助手
 
-这是一个基于 DeepSeek 大语言模型的智能对话系统，专注于太阳能电池相关问题的交流和讨论。项目采用前后端分离架构，提供流畅的对话体验和直观的用户界面。
+SolarLLM是一个基于大语言模型的太阳能领域智能助手，可以回答太阳能相关的问题，并通过文本嵌入技术提供更精准的回答。
 
 ## 功能特点
 
-- 💬 实时对话：支持流式输出，实现打字机效果
-- 🤔 推理过程：使用 DeepSeek Reasoner 模型时可查看 AI 的推理过程
-- 📝 对话历史：自动保存对话记录，支持多会话管理
-- 🔄 智能命名：根据用户第一条消息自动命名对话
-- 🎯 模型切换：支持在 DeepSeek Chat 和 DeepSeek Reasoner 两种模型之间切换
-- 🎨 优雅界面：简洁直观的用户界面，支持暗色/亮色主题
+- 基于DeepSeek大语言模型的智能问答
+- 支持文本嵌入检索，提供更精准的回答
+- 显示匹配到的相关文档和内容
+- 支持多种模型切换
+- 支持对话历史记录保存
 
-## 技术栈
+## 系统架构
 
-### 前端
-- React 18
-- TypeScript
-- Ant Design
-- Emotion (styled-components)
-- Vite
+- 前端：React + TypeScript + Ant Design
+- 后端：FastAPI + Python
+- 嵌入模型：BAAI/bge-base-en-v1.5
 
-### 后端
-- FastAPI
-- Python 3.8+
-- DeepSeek API
-- WebSocket (SSE)
-
-## 快速开始
+## 安装与使用
 
 ### 环境要求
-- Node.js 16+
+
 - Python 3.8+
-- DeepSeek API 密钥
+- Node.js 16+
+- npm 或 yarn
 
-### 安装步骤
+### 后端设置
 
-1. 克隆项目
-```bash
-git clone [项目地址]
-cd solarllm
-```
+1. 安装依赖
 
-2. 安装后端依赖
 ```bash
 cd api
 pip install -r requirements.txt
 ```
 
-3. 配置环境变量
+2. 配置环境变量
+
+复制`.env.example`文件为`.env`，并填写相应的配置：
+
 ```bash
-# 在 api/.env 文件中配置
-DEEPSEEK_API_KEY=your_api_key_here
+cp .env.example .env
 ```
 
-4. 安装前端依赖
+编辑`.env`文件，填写DeepSeek API密钥和嵌入向量目录：
+
+```
+DEEPSEEK_API_KEY=your_api_key_here
+EMBEDDING_DIR=embedding
+```
+
+3. 准备嵌入向量
+
+将文本文件放入`txt`目录，然后运行以下命令生成嵌入向量：
+
+```bash
+python -c "from api.embed import TextEmbedding; te = TextEmbedding(); te.process_directory('txt'); te.save_with_file_info('embedding')"
+```
+
+4. 启动后端服务
+
+```bash
+cd api
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+### 前端设置
+
+1. 安装依赖
+
 ```bash
 cd web
 npm install
 ```
 
-5. 启动服务
+2. 启动开发服务器
 
-后端服务：
 ```bash
-cd api
-uvicorn main:app --reload
-```
-
-前端服务：
-```bash
-cd web
 npm run dev
 ```
 
-访问 http://localhost:5173 即可使用
+3. 构建生产版本
 
-## 项目结构
-
-```
-solarllm/
-├── api/                # 后端目录
-│   ├── main.py        # 主应用程序
-│   ├── requirements.txt
-│   └── .env
-├── web/               # 前端目录
-│   ├── src/
-│   │   ├── components/
-│   │   ├── api/
-│   │   └── types/
-│   ├── package.json
-│   └── vite.config.ts
-└── README.md
+```bash
+npm run build
 ```
 
-## 主要功能说明
+## 部署说明
 
-### 对话功能
-- 支持实时流式对话
-- 自动保存对话历史
-- 可查看 AI 推理过程（使用 Reasoner 模型时）
-- 支持多轮对话上下文
+### 服务器部署
 
-### 会话管理
-- 创建新会话
-- 切换不同会话
-- 智能会话命名
-- 会话历史记录
+1. 构建前端
 
-### 模型选择
-- DeepSeek Chat：标准对话模型
-- DeepSeek Reasoner：具有推理能力的对话模型
+```bash
+cd web
+npm run build
+```
 
-## 开发计划
+2. 配置Nginx
 
-- [ ] 添加数据库支持，实现对话历史持久化
-- [ ] 支持对话导出功能
-- [ ] 添加用户认证系统
-- [ ] 实现对话内容的搜索功能
-- [ ] 支持更多的 AI 模型
-- [ ] 添加太阳能电池专业知识库
-- [ ] 优化移动端适配
+```nginx
+server {
+    listen 80;
+    server_name your_domain.com;
 
-## 贡献指南
+    location / {
+        root /path/to/web/dist;
+        try_files $uri $uri/ /index.html;
+    }
 
-欢迎提交 Issue 和 Pull Request。在提交 PR 之前，请确保：
+    location /api/ {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
 
-1. 代码符合项目的代码规范
-2. 添加必要的测试用例
-3. 更新相关文档
-4. 提交信息清晰明了
+3. 启动后端服务
+
+```bash
+cd api
+nohup uvicorn main:app --host 0.0.0.0 --port 8000 &
+```
+
+## 使用说明
+
+1. 打开浏览器访问前端页面
+2. 在输入框中输入问题
+3. 系统会自动检索相关文档，并在回答中参考这些内容
+4. 相关文档会显示在回答上方，包括文件名和匹配内容
 
 ## 许可证
 
-本项目采用 MIT 许可证 
+MIT 

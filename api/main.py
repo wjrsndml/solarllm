@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
@@ -11,6 +11,7 @@ import uuid
 import json
 import asyncio
 from starlette.background import BackgroundTask
+from embed import TextEmbedding  # 导入嵌入模块
 
 # 加载环境变量
 load_dotenv()
@@ -20,7 +21,7 @@ app = FastAPI()
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # React 开发服务器地址
+    allow_origins=["*"],  # 允许所有来源的请求，解决跨域问题
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,10 +36,31 @@ client = OpenAI(
 # 内存存储对话历史
 conversations: Dict[str, dict] = {}
 
+# 初始化文本嵌入
+embedding_dir = os.getenv("EMBEDDING_DIR", "embedding")
+text_embedding = None
+
+# 在应用启动时加载嵌入
+@app.on_event("startup")
+async def startup_event():
+    global text_embedding
+    try:
+        if os.path.exists(embedding_dir):
+            print(f"正在从 {embedding_dir} 加载嵌入向量...")
+            text_embedding = TextEmbedding.load_with_file_info(embedding_dir)
+            print(f"嵌入向量加载完成，共 {len(text_embedding)} 个向量")
+        else:
+            print(f"嵌入向量目录 {embedding_dir} 不存在，跳过加载")
+    except Exception as e:
+        print(f"加载嵌入向量时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
 class Message(BaseModel):
     role: str
     content: str
     reasoning_content: Optional[str] = None
+    context_info: Optional[List[Dict[str, str]]] = None  # 添加上下文信息字段
 
 class ChatRequest(BaseModel):
     messages: List[Message]
@@ -51,17 +73,87 @@ class Conversation(BaseModel):
     created_at: str
     messages: List[Message]
 
+# 搜索相关文本并返回上下文信息
+def search_context(query: str, top_n: int = 5) -> List[Dict[str, str]]:
+    global text_embedding
+    context_info = []
+    
+    if text_embedding is None:
+        print("嵌入向量未加载，无法搜索上下文")
+        return context_info
+    
+    try:
+        # 搜索相似文本
+        similar_texts = text_embedding.search_similar_texts(query, top_n=top_n)
+        
+        # 构建上下文信息
+        for text, similarity, file_name in similar_texts:
+            context_info.append({
+                "file_name": file_name or "未知文件",
+                "content": text[:500] + "..." if len(text) > 500 else text,  # 限制内容长度
+                "similarity": f"{similarity:.4f}"
+            })
+        
+        print(f"为查询 '{query}' 找到 {len(context_info)} 个相关上下文")
+    except Exception as e:
+        print(f"搜索上下文时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
+    
+    return context_info
+
 async def generate_stream_response(chat_request: ChatRequest, disconnect_event: asyncio.Event):
     try:
         print(f"开始处理请求，模型: {chat_request.model}")
+        
+        # 获取用户最新的消息
+        user_message = chat_request.messages[-1]
+        
+        # 如果是用户消息，搜索相关上下文
+        context_info = []
+        if user_message.role == "user":
+            context_info = search_context(user_message.content)
+            
+            # 将上下文信息添加到用户消息中
+            user_message.context_info = context_info
+            
+            # 如果找到了上下文，构建系统提示
+            if context_info:
+                context_text = "\n\n相关参考资料:\n"
+                for i, ctx in enumerate(context_info):
+                    context_text += f"{i+1}. 文件: {ctx['file_name']}\n内容: {ctx['content']}\n\n"
+                
+                # 添加系统消息，提供上下文
+                system_message = {
+                    "role": "system", 
+                    "content": f"以下是与用户问题相关的参考资料，请在回答时参考这些内容：\n{context_text}\n请基于以上参考资料回答用户的问题，如果参考资料中没有相关信息，请如实告知。"
+                }
+                
+                # 准备发送给模型的消息
+                messages_for_model = [system_message]
+                for msg in chat_request.messages:
+                    messages_for_model.append({"role": msg.role, "content": msg.content})
+            else:
+                # 如果没有找到上下文，直接使用原始消息
+                messages_for_model = [{"role": msg.role, "content": msg.content} for msg in chat_request.messages]
+        else:
+            # 非用户消息，直接使用原始消息
+            messages_for_model = [{"role": msg.role, "content": msg.content} for msg in chat_request.messages]
+        
+        # 发送请求到模型
         response = client.chat.completions.create(
             model=chat_request.model,
-            messages=[{"role": msg.role, "content": msg.content} for msg in chat_request.messages],
+            messages=messages_for_model,
             stream=True
         )
 
         full_content = ""
         full_reasoning = ""
+        
+        # 首先发送上下文信息
+        if context_info:
+            context_data = json.dumps({'type': 'context', 'content': context_info})
+            yield f"data: {context_data}\n\n"
         
         for chunk in response:
             # 检查客户端是否断开连接
@@ -106,14 +198,19 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                 if full_content:
                     full_content += " [已中断]"
             
-            conversations[chat_request.conversation_id]["messages"].extend([
-                chat_request.messages[-1].__dict__,
-                {
-                    "role": "assistant",
-                    "content": full_content,
-                    "reasoning_content": full_reasoning if chat_request.model == "deepseek-reasoner" else None
-                }
-            ])
+            # 保存用户消息（包含上下文信息）
+            user_message_dict = user_message.__dict__
+            
+            # 保存助手回复
+            assistant_message = {
+                "role": "assistant",
+                "content": full_content,
+                "reasoning_content": full_reasoning if chat_request.model == "deepseek-reasoner" else None
+            }
+            
+            # 更新对话历史
+            conversations[chat_request.conversation_id]["messages"].append(user_message_dict)
+            conversations[chat_request.conversation_id]["messages"].append(assistant_message)
             
             # 如果是新对话的第一条消息，用它来命名对话
             if len(conversations[chat_request.conversation_id]["messages"]) == 3:  # 包含欢迎消息、用户消息和助手回复

@@ -2,6 +2,13 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   reasoning_content?: string;
+  context_info?: ContextInfo[];
+}
+
+export interface ContextInfo {
+  file_name: string;
+  content: string;
+  similarity: string;
 }
 
 export interface ChatResponse {
@@ -24,6 +31,6 @@ export interface Model {
 }
 
 export interface StreamChunk {
-  type: 'content' | 'reasoning' | 'error' | 'done';
-  content: string;
+  type: 'content' | 'reasoning' | 'error' | 'done' | 'context';
+  content: string | ContextInfo[];
 } 
