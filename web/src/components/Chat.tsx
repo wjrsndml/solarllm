@@ -307,6 +307,8 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
       const newConversation = await createConversation();
       setConversations(prev => [newConversation, ...prev]);
       setCurrentConversation(newConversation);
+      
+      // 清空所有内容和状态
       setStreamingContent('');
       setStreamingReasoning('');
       setCurrentContextInfo([]);
@@ -353,11 +355,6 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
           
           setAssistantMessageAdded(true);
           
-          setStreamingContent('');
-          setStreamingReasoning('');
-          setResponseText('');
-          setReasoningText('');
-          
           setIsResponding(false);
         }
       }, 300);
@@ -387,6 +384,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
         : conv
     ));
 
+    // 清空输入和之前的响应内容
     setInputMessage('');
     setIsLoading(true);
     setCurrentContextInfo([]);
@@ -451,12 +449,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
             
             setTimeout(() => {
               setIsResponding(false);
-              
-              setStreamingContent('');
-              setStreamingReasoning('');
-              setResponseText('');
-              setReasoningText('');
-            }, 100);
+            }, 2000);
           } else if (chunk.type === 'context') {
             const contextInfo = chunk.content as ContextInfo[];
             setCurrentContextInfo(contextInfo);
@@ -496,12 +489,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
         
         setTimeout(() => {
           setIsResponding(false);
-          
-          setStreamingContent('');
-          setStreamingReasoning('');
-          setResponseText('');
-          setReasoningText('');
-        }, 100);
+        }, 2000);
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -747,7 +735,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
           <MessagesContainer>
             {renderMessages()}
             
-            {isResponding && !assistantMessageAdded && (
+            {isResponding && (
               <MessageCard 
                 isUser={false}
                 bordered={false}
@@ -759,7 +747,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
                     style={{ background: isDarkMode ? '#434343' : '#8c8c8c' }}
                   />
                   <Text strong style={{ marginLeft: 8 }}>太阳能助手</Text>
-                  <Badge status="processing" style={{ marginLeft: 8 }} />
+                  {!assistantMessageAdded && <Badge status="processing" style={{ marginLeft: 8 }} />}
                   <Text type="secondary" style={{ marginLeft: 8 }}>
                     {selectedModel === 'deepseek-reasoner' ? '(推理模式)' : '(对话模式)'}
                   </Text>
@@ -780,7 +768,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
                 )}
                 
                 <MessageContent style={{ whiteSpace: 'pre-wrap' }}>
-                  {responseText || "思考中..."}
+                  {responseText || (!assistantMessageAdded ? "思考中..." : "")}
                 </MessageContent>
               </MessageCard>
             )}
