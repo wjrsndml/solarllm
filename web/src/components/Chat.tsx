@@ -256,7 +256,6 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
   const [streamingReasoning, setStreamingReasoning] = useState('');
   const [collapsed, setCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const isStreamingRef = useRef(false);
   const [expandedReasoning, setExpandedReasoning] = useState<{[key: string]: boolean}>({});
   const abortControllerRef = useRef<AbortController | null>(null);
   const [isMessageComplete, setIsMessageComplete] = useState(true);
@@ -266,6 +265,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
   const [reasoningText, setReasoningText] = useState('');
   const [isResponding, setIsResponding] = useState(false);
   const [showContextInfo, setShowContextInfo] = useState(false);
+  const [assistantMessageAdded, setAssistantMessageAdded] = useState(true);
 
   useEffect(() => {
     loadHistory();
@@ -274,40 +274,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [currentConversation?.messages, streamingContent, streamingReasoning]);
-
-  useEffect(() => {
-    if (isMessageComplete && isStreamingRef.current && streamingContent) {
-      console.log("消息完成，保存到历史记录");
-      
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: streamingContent,
-        reasoning_content: streamingReasoning || undefined
-      };
-      
-      setCurrentConversation(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          messages: [...prev.messages, assistantMessage]
-        };
-      });
-      
-      setConversations(prev => prev.map(conv => 
-        conv.id === currentConversation?.id
-          ? { ...conv, messages: [...conv.messages, assistantMessage] }
-          : conv
-      ));
-      
-      setTimeout(() => {
-        setStreamingContent('');
-        setStreamingReasoning('');
-        isStreamingRef.current = false;
-        setIsLoading(false);
-      }, 100);
-    }
-  }, [isMessageComplete, streamingContent, streamingReasoning]);
+  }, [currentConversation?.messages, responseText, reasoningText]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -344,6 +311,12 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
       setStreamingReasoning('');
       setCurrentContextInfo([]);
       setShowContextInfo(false);
+      setResponseText('');
+      setReasoningText('');
+      setIsResponding(false);
+      setIsMessageComplete(true);
+      messageCompleteRef.current = true;
+      setAssistantMessageAdded(true);
     } catch (error) {
       message.error('创建新对话失败');
       console.error('Error creating conversation:', error);
@@ -359,9 +332,8 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
       
       setTimeout(() => {
         setIsLoading(false);
-        isStreamingRef.current = false;
         
-        if (streamingContent || streamingReasoning) {
+        if ((streamingContent || streamingReasoning) && !assistantMessageAdded) {
           const assistantMessage: Message = {
             role: 'assistant',
             content: streamingContent + (streamingContent ? ' [已中断]' : ''),
@@ -379,8 +351,14 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
               : conv
           ));
           
+          setAssistantMessageAdded(true);
+          
           setStreamingContent('');
           setStreamingReasoning('');
+          setResponseText('');
+          setReasoningText('');
+          
+          setIsResponding(false);
         }
       }, 300);
     }
@@ -417,9 +395,10 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
     setShowContextInfo(false);
     setStreamingContent('');
     setStreamingReasoning('');
-    isStreamingRef.current = true;
+    setIsResponding(true);
     setIsMessageComplete(false);
     messageCompleteRef.current = false;
+    setAssistantMessageAdded(false);
 
     let fullContent = '';
     let fullReasoning = '';
@@ -427,8 +406,6 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
     abortControllerRef.current = new AbortController();
 
     try {
-      setIsResponding(true);
-      
       await sendMessage(
         [...currentConversation.messages, userMessage],
         currentConversation.id,
@@ -446,35 +423,40 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
           } else if (chunk.type === 'error') {
             message.error(chunk.content as string);
             setIsResponding(false);
-            isStreamingRef.current = false;
           } else if (chunk.type === 'done') {
             console.log("收到完成信号");
             setIsMessageComplete(true);
             messageCompleteRef.current = true;
-            setIsResponding(false);
-            isStreamingRef.current = false;
             
-            const assistantMessage: Message = {
-              role: 'assistant',
-              content: fullContent,
-              reasoning_content: fullReasoning || undefined
-            };
+            if (!assistantMessageAdded) {
+              const assistantMessage: Message = {
+                role: 'assistant',
+                content: fullContent,
+                reasoning_content: fullReasoning || undefined
+              };
+              
+              setCurrentConversation(prev => ({
+                ...prev!,
+                messages: [...prev!.messages, assistantMessage]
+              }));
+              
+              setConversations(prev => prev.map(conv => 
+                conv.id === currentConversation.id
+                  ? { ...conv, messages: [...conv.messages, assistantMessage] }
+                  : conv
+              ));
+              
+              setAssistantMessageAdded(true);
+            }
             
-            setCurrentConversation(prev => ({
-              ...prev!,
-              messages: [...prev!.messages, assistantMessage]
-            }));
-            
-            setConversations(prev => prev.map(conv => 
-              conv.id === currentConversation.id
-                ? { ...conv, messages: [...conv.messages, assistantMessage] }
-                : conv
-            ));
-            
-            setStreamingContent('');
-            setStreamingReasoning('');
-            setResponseText('');
-            setReasoningText('');
+            setTimeout(() => {
+              setIsResponding(false);
+              
+              setStreamingContent('');
+              setStreamingReasoning('');
+              setResponseText('');
+              setReasoningText('');
+            }, 100);
           } else if (chunk.type === 'context') {
             const contextInfo = chunk.content as ContextInfo[];
             setCurrentContextInfo(contextInfo);
@@ -490,10 +472,8 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
       if (messageCompleteRef.current === false) {
         setIsMessageComplete(true);
         messageCompleteRef.current = true;
-        setIsResponding(false);
-        isStreamingRef.current = false;
         
-        if (fullContent || fullReasoning) {
+        if (!assistantMessageAdded && (fullContent || fullReasoning)) {
           const assistantMessage: Message = {
             role: 'assistant',
             content: fullContent,
@@ -510,18 +490,23 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
               ? { ...conv, messages: [...conv.messages, assistantMessage] }
               : conv
           ));
+          
+          setAssistantMessageAdded(true);
         }
         
-        setStreamingContent('');
-        setStreamingReasoning('');
-        setResponseText('');
-        setReasoningText('');
+        setTimeout(() => {
+          setIsResponding(false);
+          
+          setStreamingContent('');
+          setStreamingReasoning('');
+          setResponseText('');
+          setReasoningText('');
+        }, 100);
       }
     } catch (error) {
       console.error('Error sending message:', error);
       message.error('发送消息失败，请重试');
       setIsResponding(false);
-      isStreamingRef.current = false;
     } finally {
       setIsLoading(false);
     }
@@ -662,45 +647,6 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
             </MessageContent>
           </MessageCard>
         ))}
-        
-        {isStreamingRef.current && (
-          <MessageCard 
-            isUser={false}
-            bordered={false}
-            style={{ background: isDarkMode ? '#1f1f1f' : '#f5f5f5' }}
-          >
-            <MessageHeader>
-              <Avatar 
-                icon={<RobotOutlined />}
-                style={{ background: isDarkMode ? '#434343' : '#8c8c8c' }}
-              />
-              <Text strong style={{ marginLeft: 8 }}>太阳能助手</Text>
-              <Badge status="processing" style={{ marginLeft: 8 }} />
-              <Text type="secondary" style={{ marginLeft: 8 }}>
-                {selectedModel === 'deepseek-reasoner' ? '(推理模式)' : '(对话模式)'}
-              </Text>
-            </MessageHeader>
-            
-            {selectedModel === 'deepseek-reasoner' && streamingReasoning && (
-              <ReasoningContent isDarkMode={isDarkMode}>
-                <ReasoningHeader onClick={() => toggleReasoning('streaming')} expanded={!!expandedReasoning['streaming']}>
-                  <Text type="secondary" style={{ fontSize: '14px' }}>
-                    <CaretRightOutlined rotate={expandedReasoning['streaming'] ? 90 : 0} style={{ marginRight: 8 }} />
-                    思考过程
-                  </Text>
-                </ReasoningHeader>
-                {expandedReasoning['streaming'] && (
-                  <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{streamingReasoning}</div>
-                )}
-              </ReasoningContent>
-            )}
-            
-            {streamingContent && (
-              <MessageContent style={{ whiteSpace: 'pre-wrap' }}>{streamingContent}</MessageContent>
-            )}
-          </MessageCard>
-        )}
-        <div ref={messagesEndRef} />
       </>
     );
   };
@@ -801,7 +747,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
           <MessagesContainer>
             {renderMessages()}
             
-            {isResponding && !messageCompleteRef.current && (
+            {isResponding && !assistantMessageAdded && (
               <MessageCard 
                 isUser={false}
                 bordered={false}
@@ -838,6 +784,8 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
                 </MessageContent>
               </MessageCard>
             )}
+            
+            <div ref={messagesEndRef} />
           </MessagesContainer>
           
           <InputContainer>
