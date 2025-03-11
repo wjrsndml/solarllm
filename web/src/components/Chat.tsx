@@ -373,14 +373,16 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
       content: inputMessage.trim()
     };
 
+    // 更新对话状态
+    const updatedMessages = [...currentConversation.messages, userMessage];
     setCurrentConversation(prev => ({
       ...prev!,
-      messages: [...prev!.messages, userMessage]
+      messages: updatedMessages
     }));
 
     setConversations(prev => prev.map(conv => 
       conv.id === currentConversation.id
-        ? { ...conv, messages: [...conv.messages, userMessage] }
+        ? { ...conv, messages: updatedMessages }
         : conv
     ));
 
@@ -405,51 +407,45 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
 
     try {
       await sendMessage(
-        [...currentConversation.messages, userMessage],
+        updatedMessages,
         currentConversation.id,
         selectedModel,
         (chunk: StreamChunk) => {
-          console.log("收到数据块:", chunk);
           if (chunk.type === 'content') {
             fullContent += chunk.content as string;
-            setStreamingContent(prev => prev + (chunk.content as string));
-            setResponseText(prev => prev + (chunk.content as string));
+            setStreamingContent(fullContent);
+            setResponseText(fullContent);
           } else if (chunk.type === 'reasoning') {
             fullReasoning += chunk.content as string;
-            setStreamingReasoning(prev => prev + (chunk.content as string));
-            setReasoningText(prev => prev + (chunk.content as string));
+            setStreamingReasoning(fullReasoning);
+            setReasoningText(fullReasoning);
           } else if (chunk.type === 'error') {
             message.error(chunk.content as string);
             setIsResponding(false);
           } else if (chunk.type === 'done') {
-            console.log("收到完成信号");
+            const assistantMessage: Message = {
+              role: 'assistant',
+              content: fullContent,
+              reasoning_content: fullReasoning || undefined
+            };
+            
+            // 立即更新对话状态
+            const finalMessages = [...updatedMessages, assistantMessage];
+            setCurrentConversation(prev => ({
+              ...prev!,
+              messages: finalMessages
+            }));
+            
+            setConversations(prev => prev.map(conv => 
+              conv.id === currentConversation.id
+                ? { ...conv, messages: finalMessages }
+                : conv
+            ));
+            
             setIsMessageComplete(true);
             messageCompleteRef.current = true;
-            
-            if (!assistantMessageAdded) {
-              const assistantMessage: Message = {
-                role: 'assistant',
-                content: fullContent,
-                reasoning_content: fullReasoning || undefined
-              };
-              
-              setCurrentConversation(prev => ({
-                ...prev!,
-                messages: [...prev!.messages, assistantMessage]
-              }));
-              
-              setConversations(prev => prev.map(conv => 
-                conv.id === currentConversation.id
-                  ? { ...conv, messages: [...conv.messages, assistantMessage] }
-                  : conv
-              ));
-              
-              setAssistantMessageAdded(true);
-            }
-            
-            setTimeout(() => {
-              setIsResponding(false);
-            }, 2000);
+            setAssistantMessageAdded(true);
+            setIsResponding(false);
           } else if (chunk.type === 'context') {
             const contextInfo = chunk.content as ContextInfo[];
             setCurrentContextInfo(contextInfo);
@@ -461,42 +457,37 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
         },
         abortControllerRef.current?.signal
       );
-      
-      if (messageCompleteRef.current === false) {
-        setIsMessageComplete(true);
-        messageCompleteRef.current = true;
-        
-        if (!assistantMessageAdded && (fullContent || fullReasoning)) {
-          const assistantMessage: Message = {
-            role: 'assistant',
-            content: fullContent,
-            reasoning_content: fullReasoning || undefined
-          };
-          
-          setCurrentConversation(prev => ({
-            ...prev!,
-            messages: [...prev!.messages, assistantMessage]
-          }));
-          
-          setConversations(prev => prev.map(conv => 
-            conv.id === currentConversation.id
-              ? { ...conv, messages: [...conv.messages, assistantMessage] }
-              : conv
-          ));
-          
-          setAssistantMessageAdded(true);
-        }
-        
-        setTimeout(() => {
-          setIsResponding(false);
-        }, 2000);
-      }
     } catch (error) {
       console.error('Error sending message:', error);
       message.error('发送消息失败，请重试');
       setIsResponding(false);
     } finally {
       setIsLoading(false);
+      
+      // 确保在出错或中断时也能保存已生成的内容
+      if (!messageCompleteRef.current && (fullContent || fullReasoning)) {
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: fullContent + (fullContent ? ' [已中断]' : ''),
+          reasoning_content: fullReasoning || undefined
+        };
+        
+        const finalMessages = [...updatedMessages, assistantMessage];
+        setCurrentConversation(prev => ({
+          ...prev!,
+          messages: finalMessages
+        }));
+        
+        setConversations(prev => prev.map(conv => 
+          conv.id === currentConversation.id
+            ? { ...conv, messages: finalMessages }
+            : conv
+        ));
+        
+        setAssistantMessageAdded(true);
+        setIsMessageComplete(true);
+        messageCompleteRef.current = true;
+      }
     }
   };
 
