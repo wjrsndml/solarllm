@@ -216,6 +216,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
   const [expandedReasoning, setExpandedReasoning] = useState<{[key: string]: boolean}>({});
   const abortControllerRef = useRef<AbortController | null>(null);
   const [isMessageComplete, setIsMessageComplete] = useState(true);
+  const messageCompleteRef = useRef(true);
 
   useEffect(() => {
     loadHistory();
@@ -225,6 +226,39 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
   useEffect(() => {
     scrollToBottom();
   }, [currentConversation?.messages, streamingContent, streamingReasoning]);
+
+  useEffect(() => {
+    if (isMessageComplete && isStreamingRef.current && streamingContent) {
+      console.log("消息完成，保存到历史记录");
+      
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: streamingContent,
+        reasoning_content: streamingReasoning || undefined
+      };
+      
+      setCurrentConversation(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          messages: [...prev.messages, assistantMessage]
+        };
+      });
+      
+      setConversations(prev => prev.map(conv => 
+        conv.id === currentConversation?.id
+          ? { ...conv, messages: [...conv.messages, assistantMessage] }
+          : conv
+      ));
+      
+      setTimeout(() => {
+        setStreamingContent('');
+        setStreamingReasoning('');
+        isStreamingRef.current = false;
+        setIsLoading(false);
+      }, 100);
+    }
+  }, [isMessageComplete, streamingContent, streamingReasoning]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -326,6 +360,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
     setStreamingReasoning('');
     isStreamingRef.current = true;
     setIsMessageComplete(false);
+    messageCompleteRef.current = false;
 
     let fullContent = '';
     let fullReasoning = '';
@@ -348,31 +383,16 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
           } else if (chunk.type === 'error') {
             message.error(chunk.content);
           } else if (chunk.type === 'done') {
+            console.log("收到完成信号");
             setIsMessageComplete(true);
+            messageCompleteRef.current = true;
           }
           scrollToBottom();
         },
         abortControllerRef.current.signal
       );
 
-      if (isMessageComplete) {
-        const assistantMessage: Message = {
-          role: 'assistant',
-          content: fullContent,
-          reasoning_content: selectedModel === 'deepseek-reasoner' && fullReasoning ? fullReasoning : undefined
-        };
-
-        setCurrentConversation(prev => ({
-          ...prev!,
-          messages: [...prev!.messages, assistantMessage]
-        }));
-
-        setConversations(prev => prev.map(conv => 
-          conv.id === currentConversation.id
-            ? { ...conv, messages: [...conv.messages, assistantMessage] }
-            : conv
-        ));
-      }
+      console.log("请求完成，消息状态:", messageCompleteRef.current);
 
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -382,16 +402,18 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
         console.error('Error sending message:', error);
       }
     } finally {
-      setTimeout(() => {
-        setIsLoading(false);
-        isStreamingRef.current = false;
-        abortControllerRef.current = null;
-        
-        if (isMessageComplete) {
-          setStreamingContent('');
-          setStreamingReasoning('');
-        }
-      }, 300);
+      if (messageCompleteRef.current && streamingContent && isStreamingRef.current) {
+        console.log("在 finally 中保存消息");
+        setIsMessageComplete(true);
+      }
+      
+      if (!messageCompleteRef.current) {
+        setTimeout(() => {
+          setIsLoading(false);
+          isStreamingRef.current = false;
+          abortControllerRef.current = null;
+        }, 300);
+      }
     }
   };
 

@@ -32,10 +32,16 @@ export async function sendMessage(
 
   try {
     console.log(`开始发送消息，模型: ${model}`);
-    while (true) {
+    let isDone = false;
+    
+    while (!isDone) {
       const { done, value } = await reader.read();
       if (done) {
         console.log('响应流结束');
+        // 如果没有收到 done 消息但流结束了，发送一个 done 消息
+        if (!isDone) {
+          onChunk?.({ type: 'done', content: '' });
+        }
         break;
       }
 
@@ -50,6 +56,12 @@ export async function sendMessage(
             console.log(`解析 JSON 数据: ${jsonStr}`);
             const data = JSON.parse(jsonStr);
             console.log(`解析后的数据:`, data);
+            
+            // 如果收到 done 消息，标记为完成
+            if (data.type === 'done') {
+              isDone = true;
+            }
+            
             onChunk?.(data);
           } catch (e) {
             console.error('解析 SSE 数据失败:', e, line);
