@@ -37,6 +37,7 @@ conversations: Dict[str, dict] = {}
 class Message(BaseModel):
     role: str
     content: str
+    reasoning_content: Optional[str] = None
 
 class ChatRequest(BaseModel):
     messages: List[Message]
@@ -51,6 +52,7 @@ class Conversation(BaseModel):
 
 async def generate_stream_response(chat_request: ChatRequest):
     try:
+        print(f"开始处理请求，模型: {chat_request.model}")
         response = client.chat.completions.create(
             model=chat_request.model,
             messages=[{"role": msg.role, "content": msg.content} for msg in chat_request.messages],
@@ -61,16 +63,39 @@ async def generate_stream_response(chat_request: ChatRequest):
         full_reasoning = ""
         
         for chunk in response:
-            if chat_request.model == "deepseek-reasoner" and hasattr(chunk.choices[0].delta, 'reasoning_content'):
-                reasoning = chunk.choices[0].delta.reasoning_content or ""
-                full_reasoning += reasoning
-                if reasoning:
-                    yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning})}\n\n"
-            
-            content = chunk.choices[0].delta.content or ""
-            full_content += content
-            if content:
-                yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+            if chat_request.model == "deepseek-reasoner":
+                delta = chunk.choices[0].delta
+                
+                # # 调试信息
+                # if hasattr(delta, 'reasoning_content'):
+                #     print(f"推理内容: {delta.reasoning_content}")
+                # if hasattr(delta, 'content'):
+                #     print(f"回答内容: {delta.content}")
+                
+                if hasattr(delta, 'reasoning_content') and delta.reasoning_content is not None:
+                    reasoning = delta.reasoning_content or ""
+                    full_reasoning += reasoning
+                    if reasoning:
+                        data = json.dumps({'type': 'reasoning', 'content': reasoning})
+                        # print(f"发送推理数据: {data}")
+                        yield f"data: {data}\n\n"
+                
+                if hasattr(delta, 'content') and delta.content is not None:
+                    content = delta.content or ""
+                    full_content += content
+                    if content:
+                        data = json.dumps({'type': 'content', 'content': content})
+                        # print(f"发送内容数据: {data}")
+                        yield f"data: {data}\n\n"
+            else:
+                content = chunk.choices[0].delta.content or ""
+                full_content += content
+                if content:
+                    yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+
+        print(f"请求处理完成，模型: {chat_request.model}")
+        print(f"完整推理内容: {full_reasoning}")
+        print(f"完整回答内容: {full_content}")
 
         # 保存完整的消息到对话历史
         if chat_request.conversation_id in conversations:
@@ -101,7 +126,7 @@ async def create_conversation():
         "created_at": datetime.now().isoformat(),
         "messages": [
             {
-                "role": "assistant",
+                "role": "system",
                 "content": "欢迎讨论太阳能电池相关的问题"
             }
         ]
@@ -120,11 +145,22 @@ async def send_message(chat_request: ChatRequest):
             conversation = await create_conversation()
             chat_request.conversation_id = conversation["id"]
         
+        print(f"处理聊天请求: 模型={chat_request.model}, 会话ID={chat_request.conversation_id}")
+        print(f"消息内容: {chat_request.messages[-1].content}")
+        
         return StreamingResponse(
             generate_stream_response(chat_request),
-            media_type="text/event-stream"
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
         )
     except Exception as e:
+        print(f"处理聊天请求时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/models")
@@ -147,3 +183,10 @@ async def get_models():
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok"} 
+
+# 直接运行入口点，方便在 IDE 中调试
+if __name__ == "__main__":
+    import uvicorn
+    print("正在启动调试服务器...")
+    print("API 密钥:", os.getenv("DEEPSEEK_API_KEY")[:5] + "..." if os.getenv("DEEPSEEK_API_KEY") else "未设置")
+    uvicorn.run(app, host="0.0.0.0", port=8000) 

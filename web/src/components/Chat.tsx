@@ -275,22 +275,24 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
         currentConversation.id,
         selectedModel,
         (chunk: StreamChunk) => {
+          console.log("收到数据块:", chunk);
           if (chunk.type === 'content') {
             fullContent += chunk.content;
-            setStreamingContent(fullContent);
+            setStreamingContent(prev => prev + chunk.content);
           } else if (chunk.type === 'reasoning') {
             fullReasoning += chunk.content;
-            setStreamingReasoning(fullReasoning);
+            setStreamingReasoning(prev => prev + chunk.content);
           } else if (chunk.type === 'error') {
             message.error(chunk.content);
           }
+          scrollToBottom();
         }
       );
 
       const assistantMessage: Message = {
         role: 'assistant',
         content: fullContent,
-        reasoning_content: fullReasoning || undefined
+        reasoning_content: selectedModel === 'deepseek-reasoner' && fullReasoning ? fullReasoning : undefined
       };
 
       setCurrentConversation(prev => ({
@@ -394,7 +396,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
             {msg.reasoning_content && (
               <ReasoningContent>
                 <Text type="secondary">推理过程：</Text>
-                <div>{msg.reasoning_content}</div>
+                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.reasoning_content}</div>
               </ReasoningContent>
             )}
           </MessageCard>
@@ -413,17 +415,24 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
               />
               <Text strong style={{ marginLeft: 8 }}>太阳能助手</Text>
               <Badge status="processing" style={{ marginLeft: 8 }} />
+              <Text type="secondary" style={{ marginLeft: 8 }}>
+                {selectedModel === 'deepseek-reasoner' ? '(推理模式)' : '(对话模式)'}
+              </Text>
             </MessageHeader>
             
-            {streamingReasoning && (
-              <ReasoningContent>
-                <Text type="secondary">推理过程：</Text>
-                <div>{streamingReasoning}</div>
-              </ReasoningContent>
+            {selectedModel === 'deepseek-reasoner' && (
+              <>
+                {streamingReasoning && (
+                  <ReasoningContent>
+                    <Text type="secondary">推理过程：</Text>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{streamingReasoning}</div>
+                  </ReasoningContent>
+                )}
+              </>
             )}
             
             {streamingContent && (
-              <MessageContent>{streamingContent}</MessageContent>
+              <MessageContent style={{ whiteSpace: 'pre-wrap' }}>{streamingContent}</MessageContent>
             )}
           </MessageCard>
         )}

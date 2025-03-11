@@ -29,22 +29,35 @@ export async function sendMessage(
   }
 
   try {
+    console.log(`开始发送消息，模型: ${model}`);
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        console.log('响应流结束');
+        break;
+      }
 
       const chunk = decoder.decode(value);
+      console.log(`收到原始数据: ${chunk}`);
       const lines = chunk.split('\n');
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6));
-          onChunk?.(data);
+          try {
+            const jsonStr = line.slice(6);
+            console.log(`解析 JSON 数据: ${jsonStr}`);
+            const data = JSON.parse(jsonStr);
+            console.log(`解析后的数据:`, data);
+            onChunk?.(data);
+          } catch (e) {
+            console.error('解析 SSE 数据失败:', e, line);
+          }
         }
       }
     }
   } finally {
     reader.releaseLock();
+    console.log('释放响应流');
   }
 }
 
