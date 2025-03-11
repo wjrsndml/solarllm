@@ -6,7 +6,8 @@ export async function sendMessage(
   messages: Message[],
   conversationId?: string,
   model: string = 'deepseek-chat',
-  onChunk?: (chunk: StreamChunk) => void
+  onChunk?: (chunk: StreamChunk) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/chat/send`, {
     method: 'POST',
@@ -14,6 +15,7 @@ export async function sendMessage(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ messages, conversation_id: conversationId, model }),
+    signal
   });
 
   if (!response.ok) {

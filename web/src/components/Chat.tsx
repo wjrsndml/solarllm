@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Input, Button, message, Typography, Select, Spin, Layout, Menu, Avatar, Card, Tooltip, Switch, Badge, Empty, Divider, Tabs } from 'antd';
-import { SendOutlined, PlusOutlined, BulbOutlined, BulbFilled, MenuFoldOutlined, MenuUnfoldOutlined, UserOutlined, RobotOutlined } from '@ant-design/icons';
+import { SendOutlined, PlusOutlined, BulbOutlined, BulbFilled, MenuFoldOutlined, MenuUnfoldOutlined, UserOutlined, RobotOutlined, CaretRightOutlined, StopOutlined } from '@ant-design/icons';
 import styled from '@emotion/styled';
 import { Message, Conversation, Model, StreamChunk } from '../types/chat';
 import { sendMessage, createConversation, getHistory, getModels } from '../api/chat';
@@ -134,13 +134,32 @@ const MessageContent = styled(Text)`
   line-height: 1.6;
 `;
 
-const ReasoningContent = styled.div`
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px dashed rgba(0, 0, 0, 0.1);
-  color: #8c8c8c;
-  font-style: italic;
-  font-size: 14px;
+interface ThemeProps {
+  isDarkMode: boolean;
+}
+
+const ReasoningContent = styled.div<ThemeProps>`
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: ${props => props.isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)'};
+  border: 1px solid ${props => props.isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)'};
+`;
+
+interface ReasoningHeaderProps {
+  expanded: boolean;
+}
+
+const ReasoningHeader = styled.div<ReasoningHeaderProps>`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: ${props => props.expanded ? '8px' : '0'};
+  cursor: pointer;
+  
+  &:hover {
+    opacity: 0.8;
+  }
 `;
 
 const InputContainer = styled.div`
@@ -194,6 +213,9 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
   const [collapsed, setCollapsed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isStreamingRef = useRef(false);
+  const [expandedReasoning, setExpandedReasoning] = useState<{[key: string]: boolean}>({});
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const [isMessageComplete, setIsMessageComplete] = useState(true);
 
   useEffect(() => {
     loadHistory();
@@ -241,8 +263,46 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
     }
   };
 
+  const handleStopResponse = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      
+      setTimeout(() => {
+        setIsLoading(false);
+        isStreamingRef.current = false;
+        
+        if (streamingContent || streamingReasoning) {
+          const assistantMessage: Message = {
+            role: 'assistant',
+            content: streamingContent + (streamingContent ? ' [已中断]' : ''),
+            reasoning_content: streamingReasoning || undefined
+          };
+          
+          setCurrentConversation(prev => ({
+            ...prev!,
+            messages: [...prev!.messages, assistantMessage]
+          }));
+          
+          setConversations(prev => prev.map(conv => 
+            conv.id === currentConversation?.id
+              ? { ...conv, messages: [...conv.messages, assistantMessage] }
+              : conv
+          ));
+          
+          setStreamingContent('');
+          setStreamingReasoning('');
+        }
+      }, 300);
+    }
+  };
+
   const handleSend = async () => {
     if (!inputMessage.trim() || isLoading || !currentConversation) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
 
     const userMessage: Message = {
       role: 'user',
@@ -265,9 +325,12 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
     setStreamingContent('');
     setStreamingReasoning('');
     isStreamingRef.current = true;
+    setIsMessageComplete(false);
 
     let fullContent = '';
     let fullReasoning = '';
+
+    abortControllerRef.current = new AbortController();
 
     try {
       await sendMessage(
@@ -284,34 +347,51 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
             setStreamingReasoning(prev => prev + chunk.content);
           } else if (chunk.type === 'error') {
             message.error(chunk.content);
+          } else if (chunk.type === 'done') {
+            setIsMessageComplete(true);
           }
           scrollToBottom();
-        }
+        },
+        abortControllerRef.current.signal
       );
 
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: fullContent,
-        reasoning_content: selectedModel === 'deepseek-reasoner' && fullReasoning ? fullReasoning : undefined
-      };
+      if (isMessageComplete) {
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: fullContent,
+          reasoning_content: selectedModel === 'deepseek-reasoner' && fullReasoning ? fullReasoning : undefined
+        };
 
-      setCurrentConversation(prev => ({
-        ...prev!,
-        messages: [...prev!.messages, assistantMessage]
-      }));
+        setCurrentConversation(prev => ({
+          ...prev!,
+          messages: [...prev!.messages, assistantMessage]
+        }));
 
-      setConversations(prev => prev.map(conv => 
-        conv.id === currentConversation.id
-          ? { ...conv, messages: [...conv.messages, assistantMessage] }
-          : conv
-      ));
+        setConversations(prev => prev.map(conv => 
+          conv.id === currentConversation.id
+            ? { ...conv, messages: [...conv.messages, assistantMessage] }
+            : conv
+        ));
+      }
 
     } catch (error) {
-      message.error('发送消息失败，请重试');
-      console.error('Error sending message:', error);
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('请求被中止');
+      } else {
+        message.error('发送消息失败，请重试');
+        console.error('Error sending message:', error);
+      }
     } finally {
-      setIsLoading(false);
-      isStreamingRef.current = false;
+      setTimeout(() => {
+        setIsLoading(false);
+        isStreamingRef.current = false;
+        abortControllerRef.current = null;
+        
+        if (isMessageComplete) {
+          setStreamingContent('');
+          setStreamingReasoning('');
+        }
+      }, 300);
     }
   };
 
@@ -323,6 +403,13 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
     } else {
       setInputMessage(`请解释太阳能电池中的"${term}"概念`);
     }
+  };
+
+  const toggleReasoning = (messageId: string) => {
+    setExpandedReasoning(prev => ({
+      ...prev,
+      [messageId]: !prev[messageId]
+    }));
   };
 
   const renderMessages = () => {
@@ -389,16 +476,23 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
               </Text>
             </MessageHeader>
             
+            {msg.reasoning_content && (
+              <ReasoningContent isDarkMode={isDarkMode}>
+                <ReasoningHeader onClick={() => toggleReasoning(`${index}`)} expanded={!!expandedReasoning[`${index}`]}>
+                  <Text type="secondary" style={{ fontSize: '14px' }}>
+                    <CaretRightOutlined rotate={expandedReasoning[`${index}`] ? 90 : 0} style={{ marginRight: 8 }} />
+                    思考过程
+                  </Text>
+                </ReasoningHeader>
+                {expandedReasoning[`${index}`] && (
+                  <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{msg.reasoning_content}</div>
+                )}
+              </ReasoningContent>
+            )}
+            
             <MessageContent>
               {msg.content}
             </MessageContent>
-            
-            {msg.reasoning_content && (
-              <ReasoningContent>
-                <Text type="secondary">推理过程：</Text>
-                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.reasoning_content}</div>
-              </ReasoningContent>
-            )}
           </MessageCard>
         ))}
         
@@ -420,15 +514,18 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
               </Text>
             </MessageHeader>
             
-            {selectedModel === 'deepseek-reasoner' && (
-              <>
-                {streamingReasoning && (
-                  <ReasoningContent>
-                    <Text type="secondary">推理过程：</Text>
-                    <div style={{ whiteSpace: 'pre-wrap' }}>{streamingReasoning}</div>
-                  </ReasoningContent>
+            {selectedModel === 'deepseek-reasoner' && streamingReasoning && (
+              <ReasoningContent isDarkMode={isDarkMode}>
+                <ReasoningHeader onClick={() => toggleReasoning('streaming')} expanded={!!expandedReasoning['streaming']}>
+                  <Text type="secondary" style={{ fontSize: '14px' }}>
+                    <CaretRightOutlined rotate={expandedReasoning['streaming'] ? 90 : 0} style={{ marginRight: 8 }} />
+                    思考过程
+                  </Text>
+                </ReasoningHeader>
+                {expandedReasoning['streaming'] && (
+                  <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{streamingReasoning}</div>
                 )}
-              </>
+              </ReasoningContent>
             )}
             
             {streamingContent && (
@@ -558,7 +655,16 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
                   resize: 'none'
                 }}
               />
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, gap: 8 }}>
+                {isLoading && (
+                  <Button 
+                    danger
+                    onClick={handleStopResponse}
+                    icon={<StopOutlined />}
+                  >
+                    停止回答
+                  </Button>
+                )}
                 <Button 
                   type="primary" 
                   icon={<SendOutlined />}

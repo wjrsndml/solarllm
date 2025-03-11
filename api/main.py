@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -10,6 +10,7 @@ from datetime import datetime
 import uuid
 import json
 import asyncio
+from starlette.background import BackgroundTask
 
 # 加载环境变量
 load_dotenv()
@@ -50,7 +51,7 @@ class Conversation(BaseModel):
     created_at: str
     messages: List[Message]
 
-async def generate_stream_response(chat_request: ChatRequest):
+async def generate_stream_response(chat_request: ChatRequest, disconnect_event: asyncio.Event):
     try:
         print(f"开始处理请求，模型: {chat_request.model}")
         response = client.chat.completions.create(
@@ -63,21 +64,20 @@ async def generate_stream_response(chat_request: ChatRequest):
         full_reasoning = ""
         
         for chunk in response:
+            # 检查客户端是否断开连接
+            if disconnect_event.is_set():
+                print("检测到客户端断开连接，停止生成")
+                break
+                
             if chat_request.model == "deepseek-reasoner":
                 delta = chunk.choices[0].delta
                 
-                # # 调试信息
-                # if hasattr(delta, 'reasoning_content'):
-                #     print(f"推理内容: {delta.reasoning_content}")
-                # if hasattr(delta, 'content'):
-                #     print(f"回答内容: {delta.content}")
                 
                 if hasattr(delta, 'reasoning_content') and delta.reasoning_content is not None:
                     reasoning = delta.reasoning_content or ""
                     full_reasoning += reasoning
                     if reasoning:
                         data = json.dumps({'type': 'reasoning', 'content': reasoning})
-                        # print(f"发送推理数据: {data}")
                         yield f"data: {data}\n\n"
                 
                 if hasattr(delta, 'content') and delta.content is not None:
@@ -85,7 +85,6 @@ async def generate_stream_response(chat_request: ChatRequest):
                     full_content += content
                     if content:
                         data = json.dumps({'type': 'content', 'content': content})
-                        # print(f"发送内容数据: {data}")
                         yield f"data: {data}\n\n"
             else:
                 content = chunk.choices[0].delta.content or ""
@@ -96,9 +95,17 @@ async def generate_stream_response(chat_request: ChatRequest):
         print(f"请求处理完成，模型: {chat_request.model}")
         print(f"完整推理内容: {full_reasoning}")
         print(f"完整回答内容: {full_content}")
+        
+        # 发送完成信号
+        yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
 
         # 保存完整的消息到对话历史
         if chat_request.conversation_id in conversations:
+            # 如果是中断的消息，添加标记
+            if disconnect_event.is_set():
+                if full_content:
+                    full_content += " [已中断]"
+            
             conversations[chat_request.conversation_id]["messages"].extend([
                 chat_request.messages[-1].__dict__,
                 {
@@ -116,6 +123,9 @@ async def generate_stream_response(chat_request: ChatRequest):
 
     except Exception as e:
         yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+        print(f"生成响应时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 @app.post("/api/chat/create")
 async def create_conversation():
@@ -138,7 +148,7 @@ async def get_history():
     return list(conversations.values())
 
 @app.post("/api/chat/send")
-async def send_message(chat_request: ChatRequest):
+async def send_message(chat_request: ChatRequest, request: Request):
     try:
         # 如果没有会话ID，创建新会话
         if not chat_request.conversation_id or chat_request.conversation_id not in conversations:
@@ -148,14 +158,23 @@ async def send_message(chat_request: ChatRequest):
         print(f"处理聊天请求: 模型={chat_request.model}, 会话ID={chat_request.conversation_id}")
         print(f"消息内容: {chat_request.messages[-1].content}")
         
+        # 创建一个事件来跟踪客户端断开连接
+        disconnect_event = asyncio.Event()
+        
+        # 创建一个任务来监听客户端断开连接
+        async def on_disconnect():
+            print(f"客户端断开连接，会话ID={chat_request.conversation_id}")
+            disconnect_event.set()
+        
         return StreamingResponse(
-            generate_stream_response(chat_request),
+            generate_stream_response(chat_request, disconnect_event),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no"
-            }
+            },
+            background=BackgroundTask(on_disconnect)
         )
     except Exception as e:
         print(f"处理聊天请求时出错: {str(e)}")

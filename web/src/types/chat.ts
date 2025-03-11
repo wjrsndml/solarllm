@@ -24,6 +24,6 @@ export interface Model {
 }
 
 export interface StreamChunk {
-  type: 'content' | 'reasoning' | 'error';
+  type: 'content' | 'reasoning' | 'error' | 'done';
   content: string;
 } 
