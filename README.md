@@ -60,7 +60,7 @@ python -c "from api.embed import TextEmbedding; te = TextEmbedding(); te.process
 
 ```bash
 cd api
-uvicorn main:app --host 0.0.0.0 --port 8000
+nohup uvicorn main:app --host 0.0.0.0 --port 8000 > backend.log 2>&1 & echo $! > backend.pid
 ```
 
 ### 前端设置
@@ -75,7 +75,7 @@ npm install
 2. 启动开发服务器
 
 ```bash
-npm run dev
+nohup npm run dev -- --host > frontend.log 2>&1 & echo $! > frontend.pid
 ```
 
 3. 构建生产版本
@@ -134,3 +134,9 @@ nohup uvicorn main:app --host 0.0.0.0 --port 8000 &
 ## 许可证
 
 MIT 
+
+# 关闭前端
+kill $(cat frontend.pid) && rm frontend.pid
+
+# 关闭后端
+kill $(cat backend.pid) && rm backend.pid 
