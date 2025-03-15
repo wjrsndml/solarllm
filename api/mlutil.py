@@ -6,7 +6,7 @@ from typing import List, Dict, Tuple
 import os
 from dotenv import load_dotenv
 load_dotenv()
-model_base_path = os.getenv("MODEL_DIR", "final")
+model_base_path = os.getenv("MODEL_DIR", "final_small")
 if not os.path.exists(model_base_path):
     raise FileNotFoundError(f"模型目录 {model_base_path} 不存在")
 predictor={}
