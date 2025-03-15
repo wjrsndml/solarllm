@@ -20,9 +20,13 @@ if [ -f "frontend.log" ] && [ $(du -m frontend.log | cut -f1) -gt 10 ]; then
     mv frontend.log "frontend.log.$(date '+%Y%m%d_%H%M%S')"
 fi
 
+# 获取服务器IP地址
+SERVER_IP=$(hostname -I | awk '{print $1}')
+echo "服务器IP地址: $SERVER_IP"
+
 # 启动前端服务
 echo "启动前端服务..."
-nohup npm run dev -- --host > frontend.log 2>&1 & echo $! > frontend.pid
+nohup npm run dev -- --host 0.0.0.0 > frontend.log 2>&1 & echo $! > frontend.pid
 
 # 启动监控脚本
 echo "启动监控脚本..."
@@ -34,4 +38,5 @@ echo "前端服务已启动，PID: $(cat frontend.pid)"
 echo "监控脚本已启动，PID: $MONITOR_PID"
 echo "使用以下命令查看日志："
 echo "  tail -f frontend.log    # 查看前端日志"
-echo "  tail -f monitor.log     # 查看监控日志" 
+echo "  tail -f monitor.log     # 查看监控日志"
+echo "前端访问地址: http://$SERVER_IP:5173" 
