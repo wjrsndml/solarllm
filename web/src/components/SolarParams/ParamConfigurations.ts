@@ -93,24 +93,24 @@ export const paramConfigurations: Record<string, ParamConfig> = {
     description: '背面区域的掺杂浓度影响背场形成'
   },
   Nt_polySi_top: {
-    label: '顶部多晶硅掺杂浓度',
+    label: '顶部缺陷态密度',
     min: 1e18,
     max: 1e21,
     step: 1e18,
     unit: 'cm⁻³',
     scale: 'log',
     defaultValue: 1e20,
-    description: '顶部多晶硅掺杂浓度影响接触电阻'
+    description: '顶部缺陷态密度影响接触电阻'
   },
   Nt_polySi_rear: {
-    label: '背面多晶硅掺杂浓度',
+    label: '背面缺陷态密度',
     min: 1e18,
     max: 1e21,
     step: 1e18,
     unit: 'cm⁻³',
     scale: 'log',
     defaultValue: 1e20,
-    description: '背面多晶硅掺杂浓度影响接触电阻和选择性'
+    description: '背面缺陷态密度影响接触电阻和选择性'
   },
   Dit_Si_SiOx: {
     label: 'Si-SiOx界面态密度',
