@@ -108,11 +108,19 @@ class MCPClient:
                         }
                     ]
                 })
+                # 将result.content转换为字符串
+                # 处理TextContent对象列表
+                if isinstance(result.content, list) and all(hasattr(item, 'text') for item in result.content):
+                    # 如果是TextContent对象列表，提取所有text属性并合并
+                    result_content = " ".join(item.text for item in result.content)
+                else:
+                    # 其他情况尝试JSON序列化
+                    result_content = json.dumps(result.content) if not isinstance(result.content, str) else result.content
                 
                 messages.append({
                     "role": "tool", 
                     "tool_call_id": tool_call.id,
-                    "content": result.content
+                    "content": result_content
                 })
 
                 # Get next response from OpenAI
@@ -134,7 +142,6 @@ class MCPClient:
         print("Type your queries or 'quit' to exit.")
         
         while True:
-            try:
                 query = input("\nQuery: ").strip()
                 
                 if query.lower() == 'quit':
@@ -143,8 +150,6 @@ class MCPClient:
                 response = await self.process_query(query)
                 print("\n" + response)
                     
-            except Exception as e:
-                print(f"\nError: {str(e)}")
 
 
 async def main():

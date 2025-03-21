@@ -124,11 +124,10 @@ async def draw_curve(
     
     # 返回结果
     result = {
-        "curve_image": curve_image
+        "image": [curve_image]
     }
-    
-    if file_path:
-        result["file_path"] = file_path
+    result["text"] = {}
+    result["text"]["file_path"] = file_path
     
     return result
 
@@ -229,11 +228,10 @@ async def draw_table(
     
     # 返回结果
     result = {
-        "table_image": table_image
+        "image": [table_image]
     }
-    
-    if file_path:
-        result["file_path"] = file_path
+    result["text"] = {}
+    result["text"]["file_path"] = file_path
     
     return result
 
@@ -363,10 +361,12 @@ async def simulate_solar_cell(
     
     # 返回结果字典和JV曲线图像
     result = {
-        "parameters": predictions,
-        "jv_curve": jv_curve_image,
-        "file_path": file_path
+        "image": [jv_curve_image]
     }
+    result["text"] = {}
+    result["text"]["parameters"] = predictions
+    result["text"]["file_path"] = file_path
+
     
     return result
 
@@ -555,16 +555,18 @@ async def batch_simulate_solar_cell(
     if ctx:
         ctx.info("Batch simulation completed!")
     
-    # 返回结果
-    return {
-        "param_name": param_name,
-        "param_values": param_values.tolist(),
-        "results_table": results_df.to_dict(),
-        "trends_image": trends_image,
-        "jv_curves_image": jv_curves_image,
-        "trends_file": trends_file,
-        "jv_file": jv_file
+    result = {
+        "image": [trends_image, jv_curves_image]
     }
+    result["text"] = {}
+    result["text"]["param_name"] = param_name
+    result["text"]["param_values"] = param_values.tolist()
+    result["text"]["results_table"] = results_df.to_dict()
+    result["text"]["trends_file"] = trends_file
+    result["text"]["jv_file"] = jv_file
+    
+    # 返回结果
+    return result
 
 @mcp.prompt()
 def solar_simulation_help() -> str:
