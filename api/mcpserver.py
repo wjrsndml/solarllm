@@ -122,8 +122,8 @@ async def simulate_solar_cell(
     
     # 绘制JV曲线
     plt.plot(v_points, j_points, 'b-', label='JV Curve')
-    plt.plot([0, predictions['Vm']], [predictions['Jsc'], predictions['Im']], 'r--', label='Mp Line')
-    plt.plot([predictions['Vm']], [predictions['Im']], 'ro', label='Mpp')
+    plt.plot([0, predictions['Vm']], [predictions['Jsc'], predictions['Im']], 'r--', label='Max Power Line')
+    plt.plot([predictions['Vm']], [predictions['Im']], 'ro', label='Max Power Point')
     
     plt.xlabel('Voltage (V)')
     plt.ylabel('Current Density (mA/cm²)')
@@ -229,11 +229,11 @@ async def batch_simulate_solar_cell(
     }
     
     if param_name not in valid_params:
-        raise ValueError(f"参数名 '{param_name}' 无效。有效的参数名: {list(valid_params.keys())}")
+        raise ValueError(f"Parameter name '{param_name}' is invalid. Valid parameters: {list(valid_params.keys())}")
     
     # 解析参数范围
     if len(param_range) != 3:
-        raise ValueError("参数范围必须包含三个值: [初始值, 步长, 结束值]")
+        raise ValueError("Parameter range must contain three values: [start, step, end]")
     
     start_val, step_val, end_val = param_range
     
@@ -241,7 +241,7 @@ async def batch_simulate_solar_cell(
     param_values = np.arange(start_val, end_val + step_val/2, step_val)
     
     if ctx:
-        ctx.info(f"将模拟 {param_name} 的 {len(param_values)} 个值: {param_values}")
+        ctx.info(f"Will simulate {len(param_values)} values for {param_name}: {param_values}")
     
     # 存储所有仿真结果
     all_results = []
@@ -254,7 +254,7 @@ async def batch_simulate_solar_cell(
     # 对每个参数值进行仿真
     for val in param_values:
         if ctx:
-            ctx.info(f"模拟 {param_name} = {val}")
+            ctx.info(f"Simulating {param_name} = {val}")
         
         # 更新当前参数值
         base_params[param_name] = val
@@ -283,11 +283,11 @@ async def batch_simulate_solar_cell(
     results_df = pd.DataFrame(all_results)
     
     if ctx:
-        ctx.info("生成性能趋势图...")
+        ctx.info("Generating performance trend charts...")
     
     # 创建性能趋势图
     fig_trends = plt.figure(figsize=(12, 8))
-    fig_trends.suptitle(f"Solar Cell Performance Trends of {param_name}", fontsize=14)
+    fig_trends.suptitle(f"Solar Cell Performance vs {param_name}", fontsize=14)
     
     # 创建子图
     axs = fig_trends.subplots(2, 3)
@@ -319,11 +319,11 @@ async def batch_simulate_solar_cell(
     plt.close(fig_trends)
     
     if ctx:
-        ctx.info("生成JV曲线叠加图...")
+        ctx.info("Generating combined JV curves...")
     
-    # 创建JV曲线叠加图
-    fig_jv = plt.figure(figsize=(10, 6))
-    plt.title(f"JVcurve of {param_name}")
+    # 创建JV曲线叠加图 - 使用明确的轴对象
+    fig_jv, ax = plt.subplots(figsize=(10, 6))
+    ax.set_title(f"JV Curves vs {param_name}")
     
     # 根据参数值选择一个颜色映射
     cmap = plt.get_cmap('viridis')
@@ -332,20 +332,20 @@ async def batch_simulate_solar_cell(
     # 绘制所有JV曲线
     for i, val in enumerate(param_values):
         color = cmap(norm(val))
-        plt.plot(all_v_points[i], all_j_points[i], color=color, label=f"{param_name}={val}")
+        ax.plot(all_v_points[i], all_j_points[i], color=color, label=f"{param_name}={val}")
     
-    plt.xlabel('Voltage (V)')
-    plt.ylabel('Current Density (mA/cm²)')
+    ax.set_xlabel('Voltage (V)')
+    ax.set_ylabel('Current Density (mA/cm²)')
     
-    # 添加颜色条
+    # 添加颜色条 - 修复颜色条问题，明确指定轴对象
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    cbar = plt.colorbar(sm)
+    cbar = fig_jv.colorbar(sm, ax=ax)
     cbar.set_label(param_name)
     
     # 如果曲线太多，不显示图例
     if len(param_values) <= 10:
-        plt.legend(loc='best')
+        ax.legend(loc='best')
     
     plt.tight_layout()
     
@@ -358,7 +358,7 @@ async def batch_simulate_solar_cell(
     plt.close(fig_jv)
     
     if ctx:
-        ctx.info("批量仿真完成!")
+        ctx.info("Batch simulation completed!")
     
     # 返回结果
     return {
