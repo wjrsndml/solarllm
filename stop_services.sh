@@ -179,8 +179,8 @@ echo -e "\n${YELLOW}[3/3] 停止后端服务...${NC}"
 echo -e "${YELLOW}查找所有后端相关进程...${NC}"
 
 # 查找所有Python进程
-PYTHON_PIDS=$(ps aux | grep -E 'python.*main.py|python.*api' | grep -v grep | awk '{print $2}')
-UVICORN_PIDS=$(ps aux | grep -E 'uvicorn' | grep -v grep | awk '{print $2}')
+PYTHON_PIDS=$(ps aux | grep -E "python.*$BACKEND_DIR.*main.py|python.*$BACKEND_DIR.*api" | grep -v grep | awk '{print $2}')
+UVICORN_PIDS=$(ps aux | grep -E "uvicorn.*$BACKEND_DIR" | grep -v grep | awk '{print $2}')
 
 # 合并所有找到的PID
 ALL_BACKEND_PIDS="$PYTHON_PIDS $UVICORN_PIDS"
