@@ -1,14 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Input, Button, message, Typography, Select, Spin, Layout, Menu, Avatar, Card, Tooltip, Switch, Badge, Empty, Divider, Tabs } from 'antd';
+import { Input, Button, message, Typography, Select, Spin, Layout, Menu, Avatar, Card, Tooltip, Switch, Badge, Empty, Divider, Tabs, Image } from 'antd';
 import { SendOutlined, PlusOutlined, BulbOutlined, BulbFilled, MenuFoldOutlined, MenuUnfoldOutlined, UserOutlined, RobotOutlined, CaretRightOutlined, StopOutlined, DownOutlined, UpOutlined, FileTextOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { useTabContext } from '../contexts/TabContext';
 import styled from '@emotion/styled';
-import { Message, Conversation, Model, StreamChunk, ContextInfo } from '../types/chat';
+import { Message, Conversation, Model, StreamChunk, ContextInfo, ImageContent } from '../types/chat';
 import { sendMessage, createConversation, getHistory, getModels } from '../api/chat';
 import InfoCards from './Chat/InfoCards';
 import Glossary from './Chat/Glossary';
 import Resources from './Chat/Resources';
 import SolarIcon from './Layout/SolarIcon';
+
+// 导入API基础URL
+const API_BASE_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:8000' 
+  : `${window.location.protocol}//${window.location.hostname}:8000`;
 
 const { Text, Title } = Typography;
 const { Option } = Select;
@@ -269,6 +274,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
   const [isResponding, setIsResponding] = useState(false);
   const [showContextInfo, setShowContextInfo] = useState(false);
   const [assistantMessageAdded, setAssistantMessageAdded] = useState(true);
+  const [images, setImages] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     loadHistory();
@@ -408,6 +414,12 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
 
     abortControllerRef.current = new AbortController();
 
+    // 为新消息创建唯一ID，保存并使用一个一致的ID
+    const tempMsgId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // 重置当前会话的图像
+    setImages(prev => ({...prev, [tempMsgId]: []}));
+    
     try {
       await sendMessage(
         updatedMessages,
@@ -432,6 +444,26 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
               reasoning_content: fullReasoning || undefined
             };
             
+            // 检查消息内容中是否包含图像路径信息
+            const imgRegex = /simulation_results\/[\w.-]+\.png/g;
+            const imgMatches = fullContent.match(imgRegex);
+            
+            // 如果消息中包含图像路径，将其添加到images状态中
+            if (imgMatches && imgMatches.length > 0) {
+              setImages(prev => {
+                const messageImages = [...(prev[tempMsgId] || [])];
+                
+                // 为每个图像路径生成API URL
+                imgMatches.forEach(imgPath => {
+                  // 从API获取图像 - 这里假设API有一个端点可以获取图像
+                  const imgUrl = `${API_BASE_URL}/api/files/${encodeURIComponent(imgPath)}`;
+                  messageImages.push(imgUrl);
+                });
+                
+                return {...prev, [tempMsgId]: messageImages};
+              });
+            }
+            
             // 立即更新对话状态
             const finalMessages = [...updatedMessages, assistantMessage];
             setCurrentConversation(prev => ({
@@ -439,11 +471,15 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
               messages: finalMessages
             }));
             
-            setConversations(prev => prev.map(conv => 
-              conv.id === currentConversation.id
-                ? { ...conv, messages: finalMessages }
-                : conv
-            ));
+            // 将tempMsgId与最终消息ID关联起来
+            const finalMsgId = `${currentConversation.id}-${finalMessages.length - 1}`;
+            setImages(prev => {
+              const result = {...prev};
+              if (prev[tempMsgId] && prev[tempMsgId].length > 0) {
+                result[finalMsgId] = [...prev[tempMsgId]];
+              }
+              return result;
+            });
             
             setIsMessageComplete(true);
             messageCompleteRef.current = true;
@@ -455,6 +491,13 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
             if (contextInfo && contextInfo.length > 0) {
               setShowContextInfo(false);
             }
+          } else if (chunk.type === 'image') {
+            const imageContent = chunk.content as ImageContent;
+            setImages(prev => {
+              const messageImages = [...(prev[tempMsgId] || [])];
+              messageImages.push(imageContent.image_data);
+              return {...prev, [tempMsgId]: messageImages};
+            });
           }
           scrollToBottom();
         },
@@ -467,7 +510,7 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
     } finally {
       setIsLoading(false);
       
-      // 确保在出错或中断时也能保存已生成的内容
+      // 如果消息保存失败，也要确保关联正确的图像
       if (!messageCompleteRef.current && (fullContent || fullReasoning)) {
         const assistantMessage: Message = {
           role: 'assistant',
@@ -490,6 +533,15 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
         setAssistantMessageAdded(true);
         setIsMessageComplete(true);
         messageCompleteRef.current = true;
+        
+        const finalMsgId = `${currentConversation.id}-${finalMessages.length - 1}`;
+        setImages(prev => {
+          const result = {...prev};
+          if (prev[tempMsgId] && prev[tempMsgId].length > 0) {
+            result[finalMsgId] = [...prev[tempMsgId]];
+          }
+          return result;
+        });
       }
     }
   };
@@ -585,50 +637,87 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
 
     return (
       <>
-        {currentConversation.messages.map((msg, index) => (
-          <MessageCard 
-            key={index} 
-            isUser={msg.role === 'user'}
-            bordered={false}
-            style={{ 
-              background: msg.role === 'user' 
-                ? (isDarkMode ? '#177ddc' : '#e6f7ff') 
-                : (isDarkMode ? '#1f1f1f' : '#f5f5f5')
-            }}
-          >
-            <MessageHeader>
-              <Avatar 
-                icon={msg.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
-                style={{ 
-                  background: msg.role === 'user' 
-                    ? (isDarkMode ? '#0050b3' : '#1890ff') 
-                    : (isDarkMode ? '#434343' : '#8c8c8c')
-                }}
-              />
-              <Text strong style={{ marginLeft: 8, color: msg.role === 'user' && !isDarkMode ? '#1890ff' : undefined }}>
-                {msg.role === 'user' ? '您' : '太阳能助手'}
-              </Text>
-            </MessageHeader>
-            
-            {msg.reasoning_content && (
-              <ReasoningContent isDarkMode={isDarkMode}>
-                <ReasoningHeader onClick={() => toggleReasoning(`${index}`)} expanded={!!expandedReasoning[`${index}`]}>
-                  <Text type="secondary" style={{ fontSize: '14px' }}>
-                    <CaretRightOutlined rotate={expandedReasoning[`${index}`] ? 90 : 0} style={{ marginRight: 8 }} />
-                    思考过程
-                  </Text>
-                </ReasoningHeader>
-                {expandedReasoning[`${index}`] && (
-                  <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{msg.reasoning_content}</div>
-                )}
-              </ReasoningContent>
-            )}
-            
-            <MessageContent>
-              {msg.content}
-            </MessageContent>
-          </MessageCard>
-        ))}
+        {currentConversation.messages.map((msg, index) => {
+          const messageId = `${currentConversation.id}-${index}`;
+          const messageImages = images[messageId] || [];
+          
+          // 从消息中提取图像路径
+          let extractedImagePaths: string[] = [];
+          if (msg.role === 'assistant') {
+            const imgRegex = /simulation_results\/[\w.-]+\.png/g;
+            const imgMatches = msg.content.match(imgRegex) || [];
+            extractedImagePaths = imgMatches.map(path => `${API_BASE_URL}/api/files/${encodeURIComponent(path)}`);
+          }
+          
+          // 合并消息对应的图像和提取的图像路径
+          const allImages = [...(messageImages || []), ...extractedImagePaths];
+          
+          return (
+            <MessageCard 
+              key={index} 
+              isUser={msg.role === 'user'}
+              bordered={false}
+              style={{ 
+                background: msg.role === 'user' 
+                  ? (isDarkMode ? '#177ddc' : '#e6f7ff') 
+                  : (isDarkMode ? '#1f1f1f' : '#f5f5f5')
+              }}
+            >
+              <MessageHeader>
+                <Avatar 
+                  icon={msg.role === 'user' ? <UserOutlined /> : <RobotOutlined />}
+                  style={{ 
+                    background: msg.role === 'user' 
+                      ? (isDarkMode ? '#0050b3' : '#1890ff') 
+                      : (isDarkMode ? '#434343' : '#8c8c8c')
+                  }}
+                />
+                <Text strong style={{ marginLeft: 8, color: msg.role === 'user' && !isDarkMode ? '#1890ff' : undefined }}>
+                  {msg.role === 'user' ? '您' : '太阳能助手'}
+                </Text>
+              </MessageHeader>
+              
+              {msg.reasoning_content && (
+                <ReasoningContent isDarkMode={isDarkMode}>
+                  <ReasoningHeader onClick={() => toggleReasoning(messageId)} expanded={!!expandedReasoning[messageId]}>
+                    <Text type="secondary" style={{ fontSize: '14px' }}>
+                      <CaretRightOutlined rotate={expandedReasoning[messageId] ? 90 : 0} style={{ marginRight: 8 }} />
+                      思考过程
+                    </Text>
+                  </ReasoningHeader>
+                  {expandedReasoning[messageId] && (
+                    <div style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>{msg.reasoning_content}</div>
+                  )}
+                </ReasoningContent>
+              )}
+              
+              <MessageContent>
+                {msg.content}
+              </MessageContent>
+              
+              {allImages.length > 0 && (
+                <div style={{ marginTop: '12px' }}>
+                  <Text strong>生成的图像：</Text>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
+                    {allImages.map((imgData, imgIndex) => {
+                      // 判断是URL还是base64数据
+                      const isUrl = imgData.startsWith('http');
+                      return (
+                        <Image 
+                          key={imgIndex}
+                          src={isUrl ? imgData : `data:image/png;base64,${imgData}`}
+                          alt={`工具生成的图像 ${imgIndex+1}`}
+                          style={{ maxWidth: '100%', borderRadius: '4px' }}
+                          preview={{ mask: <div>查看大图</div> }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </MessageCard>
+          );
+        })}
       </>
     );
   };

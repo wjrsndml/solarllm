@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from pydantic import BaseModel
 from typing import List, Dict, Optional, Tuple, Any
 from openai import OpenAI
@@ -15,6 +15,7 @@ import base64
 import io
 from matplotlib.figure import Figure
 import logging
+from fastapi.staticfiles import StaticFiles
 
 # 配置日志
 logging.basicConfig(
@@ -41,6 +42,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 添加静态文件服务
+@app.get("/api/files/{file_path:path}")
+async def get_file(file_path: str):
+    """提供对生成的图表和文件的访问"""
+    try:
+        # 设置安全限制，只允许访问simulation_results目录
+        if not file_path.startswith("simulation_results/"):
+            raise HTTPException(status_code=403, detail="Access forbidden")
+        
+        # 构建文件的完整路径
+        file_full_path = file_path
+        
+        # 检查文件是否存在
+        if not os.path.exists(file_full_path):
+            raise HTTPException(status_code=404, detail=f"File {file_path} not found")
+        
+        # 返回文件
+        return FileResponse(
+            file_full_path,
+            media_type="image/png" if file_path.endswith(".png") else "application/octet-stream"
+        )
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        logger.info(f"获取文件时出错: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error serving file: {str(e)}")
 
 # 初始化 OpenAI 客户端
 client = OpenAI(
@@ -364,6 +392,27 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                 if has_images:
                                     # 添加图像信息到结果
                                     result_content += "\n(结果包含图像数据)"
+                                    
+                                    # 单独处理图像数据，发送给前端
+                                    for i, img in enumerate(result.content.image):
+                                        try:
+                                            # 转换为base64编码
+                                            img_base64 = base64.b64encode(img.data).decode('utf-8')
+                                            
+                                            # 发送图像数据，但不将其添加到消息历史中
+                                            image_data = {
+                                                'type': 'image', 
+                                                'content': {
+                                                    'tool_name': tool_name,
+                                                    'image_data': img_base64,
+                                                    'image_index': i,
+                                                    'format': img.format if hasattr(img, 'format') else 'png'
+                                                }
+                                            }
+                                            yield f"data: {json.dumps(image_data)}\n\n"
+                                            logger.info(f"发送工具 {tool_name} 的图像数据 #{i}")
+                                        except Exception as e:
+                                            logger.info(f"处理图像数据时出错: {str(e)}")
                                 
                                 # 将工具调用结果添加到历史记录中
                                 openai_messages.append({

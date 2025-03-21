@@ -31,6 +31,13 @@ export interface Model {
 }
 
 export interface StreamChunk {
-  type: 'content' | 'reasoning' | 'error' | 'done' | 'context';
-  content: string | ContextInfo[];
+  type: 'content' | 'reasoning' | 'error' | 'done' | 'context' | 'image';
+  content: string | ContextInfo[] | ImageContent;
+}
+
+export interface ImageContent {
+  tool_name: string;
+  image_data: string;  // base64编码的图像数据
+  image_index: number;
+  format: string;
 } 

@@ -1,4 +1,4 @@
-import { Message, ChatResponse, Conversation, Model, StreamChunk } from '../types/chat';
+import { Message, ChatResponse, Conversation, Model, StreamChunk, ImageContent } from '../types/chat';
 import logger from '../utils/logger';
 
 // 动态获取API基础URL，解决跨域问题
@@ -91,6 +91,15 @@ export async function sendMessage(
               } else if (data.type === 'done') {
                 logger.info('收到完成信号');
                 isDone = true;
+              } else if (data.type === 'image') {
+                // 记录图像接收情况
+                const imageContent = data.content as ImageContent;
+                logger.info('收到图像数据', { 
+                  tool_name: imageContent.tool_name,
+                  image_index: imageContent.image_index,
+                  format: imageContent.format,
+                  size: imageContent.image_data.length
+                });
               }
               
               onChunk?.(data);
