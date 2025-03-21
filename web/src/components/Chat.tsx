@@ -453,11 +453,13 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
               setImages(prev => {
                 const messageImages = [...(prev[tempMsgId] || [])];
                 
-                // 为每个图像路径生成API URL
+                // 为每个图像路径生成API URL，并确保不会添加重复的URL
                 imgMatches.forEach(imgPath => {
-                  // 从API获取图像 - 这里假设API有一个端点可以获取图像
                   const imgUrl = `${API_BASE_URL}/api/files/${encodeURIComponent(imgPath)}`;
-                  messageImages.push(imgUrl);
+                  // 检查是否已存在相同URL，避免重复添加
+                  if (!messageImages.includes(imgUrl)) {
+                    messageImages.push(imgUrl);
+                  }
                 });
                 
                 return {...prev, [tempMsgId]: messageImages};
@@ -495,7 +497,13 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
             const imageContent = chunk.content as ImageContent;
             setImages(prev => {
               const messageImages = [...(prev[tempMsgId] || [])];
-              messageImages.push(imageContent.image_data);
+              const imgData = imageContent.image_data;
+              
+              // 检查是否已存在相同的base64数据，避免重复添加
+              if (!messageImages.includes(imgData)) {
+                messageImages.push(imgData);
+              }
+              
               return {...prev, [tempMsgId]: messageImages};
             });
           }
@@ -641,17 +649,6 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
           const messageId = `${currentConversation.id}-${index}`;
           const messageImages = images[messageId] || [];
           
-          // 从消息中提取图像路径
-          let extractedImagePaths: string[] = [];
-          if (msg.role === 'assistant') {
-            const imgRegex = /simulation_results\/[\w.-]+\.png/g;
-            const imgMatches = msg.content.match(imgRegex) || [];
-            extractedImagePaths = imgMatches.map(path => `${API_BASE_URL}/api/files/${encodeURIComponent(path)}`);
-          }
-          
-          // 合并消息对应的图像和提取的图像路径
-          const allImages = [...(messageImages || []), ...extractedImagePaths];
-          
           return (
             <MessageCard 
               key={index} 
@@ -695,11 +692,11 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
                 {msg.content}
               </MessageContent>
               
-              {allImages.length > 0 && (
+              {messageImages.length > 0 && (
                 <div style={{ marginTop: '12px' }}>
                   <Text strong>生成的图像：</Text>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '8px' }}>
-                    {allImages.map((imgData, imgIndex) => {
+                    {messageImages.map((imgData: string, imgIndex: number) => {
                       // 判断是URL还是base64数据
                       const isUrl = imgData.startsWith('http');
                       return (
