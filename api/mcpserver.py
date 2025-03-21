@@ -2,7 +2,7 @@
 import os
 import base64
 import io
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -17,7 +17,9 @@ from starlette.routing import Mount, Route
 from mcp.server import Server
 import uvicorn
 from dotenv import load_dotenv
+from api.embed import TextEmbedding  # 导入嵌入模块
 load_dotenv()
+
 # 初始化FastMCP服务器
 mcp = FastMCP("太阳能电池仿真服务")
 
@@ -33,6 +35,28 @@ for param in ['Vm', 'Im', 'Voc', 'Jsc', 'FF', 'Eff']:
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"模型 {param} 不存在于路径 {model_path}")
     predictor[param] = TabularPredictor.load(model_path)
+
+# 初始化文本嵌入
+embedding_dir = os.getenv("EMBEDDING_DIR", "embedding")
+text_embedding = None
+
+# 在服务器启动时加载嵌入
+def load_text_embedding():
+    global text_embedding
+    try:
+        if os.path.exists(embedding_dir):
+            print(f"正在从 {embedding_dir} 加载嵌入向量...")
+            text_embedding = TextEmbedding.load_with_file_info(embedding_dir)
+            print(f"嵌入向量加载完成，共 {len(text_embedding)} 个向量")
+        else:
+            print(f"嵌入向量目录 {embedding_dir} 不存在，跳过加载")
+    except Exception as e:
+        print(f"加载嵌入向量时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+# 调用加载函数
+load_text_embedding()
 
 def fig_to_image(fig: Figure) -> Image:
     """将matplotlib图像转换为MCP Image对象"""
@@ -635,6 +659,187 @@ def solar_simulation_help() -> str:
     
     同时会生成JV曲线图，显示电流-电压特性。所有图像都会自动保存到本地文件夹中。
     """
+
+@mcp.tool()
+async def search_embedded_text(
+    query: str,              # 查询文本
+    top_n: int = 5,          # 返回的相似文本数量
+    min_similarity: float = 0.5,  # 最小相似度阈值
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    搜索与查询文本最相似的嵌入文本
+    
+    这个工具使用预训练的嵌入模型，根据语义相似度查找与查询文本最相关的文档，
+    可用于检索太阳能电池相关资料、术语解释等。
+    
+    参数:
+    - query: 要搜索的查询文本
+    - top_n: 返回的最相似文本数量
+    - min_similarity: 最小相似度阈值，低于此值的结果将被过滤
+    
+    返回:
+    - 相似文本列表，包含文件名、内容和相似度
+    """
+    global text_embedding
+    context_info = []
+    
+    if ctx:
+        ctx.info(f"开始搜索与查询 '{query}' 相关的文本...")
+    
+    if text_embedding is None:
+        if ctx:
+            ctx.warning("嵌入向量未加载，无法搜索上下文")
+        return {
+            "text": {
+                "error": "嵌入向量未加载，无法搜索上下文",
+                "results": []
+            }
+        }
+    
+    try:
+        # 搜索相似文本
+        similar_texts = text_embedding.search_similar_texts(query, top_n=top_n, min_similarity=min_similarity)
+        
+        # 构建上下文信息
+        for text, similarity, file_name in similar_texts:
+            context_info.append({
+                "file_name": file_name or "未知文件",
+                "content": text[:500] + "..." if len(text) > 500 else text,  # 限制内容长度
+                "similarity": f"{similarity:.4f}"
+            })
+        
+        if ctx:
+            ctx.info(f"为查询 '{query}' 找到 {len(context_info)} 个相关上下文")
+        
+        # 创建结果表格图
+        if context_info and len(context_info) > 0:
+            fig, ax = plt.subplots(figsize=(12, len(context_info) * 1.2 + 2))
+            ax.axis('tight')
+            ax.axis('off')
+            
+            table_data = []
+            for item in context_info:
+                # 截断内容以适应表格
+                content_preview = item["content"]
+                if len(content_preview) > 100:
+                    content_preview = content_preview[:97] + "..."
+                
+                table_data.append([
+                    item["file_name"],
+                    content_preview,
+                    item["similarity"]
+                ])
+            
+            table = ax.table(
+                cellText=table_data,
+                colLabels=["文件名", "内容预览", "相似度"],
+                loc='center',
+                cellLoc='left'
+            )
+            
+            # 调整表格样式
+            table.auto_set_font_size(False)
+            table.set_fontsize(9)
+            table.scale(1, 1.5)
+            
+            # 设置列宽
+            table.auto_set_column_width([0, 1, 2])
+            
+            plt.title(f"与查询 '{query}' 相关的文本")
+            plt.tight_layout()
+            
+            # 转换为MCP Image对象
+            results_image = fig_to_image(fig)
+            plt.close(fig)
+        else:
+            results_image = None
+    
+    except Exception as e:
+        if ctx:
+            ctx.error(f"搜索上下文时出错: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "text": {
+                "error": f"搜索上下文时出错: {str(e)}",
+                "results": []
+            }
+        }
+    
+    return {
+        "text": {
+            "results": context_info
+        },
+        "image": [results_image] if results_image else []
+    }
+
+@mcp.tool()
+async def process_directory_for_embedding(
+    directory_path: str,         # 要处理的目录路径
+    file_pattern: str = "*.txt", # 文件匹配模式
+    truncate_length: int = None, # 文本截断长度，None表示不截断
+    save_dir: str = "embedding", # 保存嵌入向量的目录
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    处理指定目录下的文本文件，将其转换为嵌入向量并保存
+    
+    这个工具可以将一个目录中的文本文件转换为嵌入向量，用于后续的语义搜索。
+    处理完成后，可以直接使用search_embedded_text工具进行搜索。
+    
+    参数:
+    - directory_path: 要处理的目录路径
+    - file_pattern: 文件匹配模式，如"*.txt"、"*.md"等
+    - truncate_length: 文本截断长度，过长的文本将被分割
+    - save_dir: 保存嵌入向量的目录
+    
+    返回:
+    - 处理结果，包含处理的文件数量、生成的嵌入向量数量等
+    """
+    global text_embedding
+    
+    if ctx:
+        ctx.info(f"开始处理目录 {directory_path} 中的文本文件...")
+    
+    try:
+        # 初始化TextEmbedding
+        text_embedding = TextEmbedding()
+        
+        # 处理文本文件
+        text_embedding.process_directory(directory_path, file_pattern, truncate_length)
+        
+        # 确保保存目录存在
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # 保存嵌入向量
+        text_embedding.save_with_file_info(save_dir)
+        
+        if ctx:
+            ctx.info(f"嵌入向量生成完成，已保存到 {save_dir} 目录")
+        
+        return {
+            "text": {
+                "status": "success",
+                "embedding_dir": save_dir,
+                "vector_count": len(text_embedding),
+                "message": f"嵌入向量生成完成，已保存到 {save_dir} 目录",
+            }
+        }
+    
+    except Exception as e:
+        error_msg = f"处理文本文件时出错: {str(e)}"
+        if ctx:
+            ctx.error(error_msg)
+        import traceback
+        traceback.print_exc()
+        
+        return {
+            "text": {
+                "status": "error",
+                "message": error_msg
+            }
+        }
 
 def create_starlette_app(mcp_server: Server, *, debug: bool = False) -> Starlette:
     """创建一个Starlette应用，使用SSE为MCP服务器提供服务"""
