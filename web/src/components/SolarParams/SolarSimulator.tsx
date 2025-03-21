@@ -84,9 +84,11 @@ const SolarSimulator: React.FC<ThemeProps> = ({ isDarkMode }) => {
   // 执行预测
   const performPrediction = async (currentParams: SolarParams) => {
     try {
+      // 只设置loading状态，不清空现有的预测数据和图像
       setLoading(true);
       setError(null);
       const result = await predictSolarParams(currentParams);
+      // 只有当成功获取到新数据时才更新UI
       setPredictions(result.predictions);
       setJvCurveImage(`data:image/png;base64,${result.jv_curve}`);
     } catch (err) {
@@ -191,7 +193,10 @@ const SolarSimulator: React.FC<ThemeProps> = ({ isDarkMode }) => {
       <ResultsCard 
         title={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span><ThunderboltOutlined /> 预测结果</span>
+            <span>
+              <ThunderboltOutlined /> 预测结果
+              {loading && <Spin size="small" style={{ marginLeft: 8 }} />}
+            </span>
             <Button 
               icon={<ReloadOutlined />} 
               onClick={handleReset}
@@ -203,7 +208,6 @@ const SolarSimulator: React.FC<ThemeProps> = ({ isDarkMode }) => {
           </div>
         }
         bordered={false}
-        loading={loading}
       >
         <StatsRow gutter={[16, 16]}>
           {predictions && Object.entries(predictions).map(([key, value]) => {
@@ -224,12 +228,19 @@ const SolarSimulator: React.FC<ThemeProps> = ({ isDarkMode }) => {
         </StatsRow>
         
         <JVCurveContainer>
+          {loading && (
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 10 }}>
+              <Spin />
+            </div>
+          )}
           {jvCurveImage ? (
-            <img 
-              src={jvCurveImage} 
-              alt="JV曲线" 
-              style={{ maxWidth: '100%', maxHeight: '400px' }} 
-            />
+            <div style={{ position: 'relative' }}>
+              <img 
+                src={jvCurveImage} 
+                alt="JV曲线" 
+                style={{ maxWidth: '100%', maxHeight: '400px', opacity: loading ? 0.6 : 1 }} 
+              />
+            </div>
           ) : (
             <div style={{ height: '300px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
               <Text type="secondary">JV曲线将在这里显示</Text>
