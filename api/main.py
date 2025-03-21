@@ -201,6 +201,9 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
         is_first_response = True
         tool_results = []
         
+        # 用于累积工具调用信息的变量
+        accumulated_tool_calls = {}  # 格式: {index: {'id': id, 'name': name, 'arguments': arguments}}
+        
         while True:
             try:
                 # 初始API调用或后续调用
@@ -222,7 +225,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                 
                 # 收集完整内容
                 current_content = ""
-                current_delta_obj = None
+                has_tool_calls = False
                 
                 for chunk in response:
                     # 检查客户端是否断开连接
@@ -246,10 +249,32 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                 context_data = json.dumps({'type': 'context', 'content': context_info})
                                 yield f"data: {context_data}\n\n"
                     
-                    # 处理工具调用请求
+                    # 处理工具调用请求 - 累积工具调用信息
                     if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                        # 记录最新的工具调用请求
-                        current_delta_obj = delta
+                        has_tool_calls = True
+                        for tool_call in delta.tool_calls:
+                            # 获取工具调用索引
+                            idx = tool_call.index
+                            
+                            # 初始化累积结构（如果不存在）
+                            if idx not in accumulated_tool_calls:
+                                accumulated_tool_calls[idx] = {
+                                    'id': None,
+                                    'name': None,
+                                    'arguments': ''
+                                }
+                            
+                            # 累积ID
+                            if hasattr(tool_call, 'id') and tool_call.id:
+                                accumulated_tool_calls[idx]['id'] = tool_call.id
+                            
+                            # 累积函数名和参数
+                            if hasattr(tool_call, 'function'):
+                                if hasattr(tool_call.function, 'name') and tool_call.function.name:
+                                    accumulated_tool_calls[idx]['name'] = tool_call.function.name
+                                
+                                if hasattr(tool_call.function, 'arguments') and tool_call.function.arguments:
+                                    accumulated_tool_calls[idx]['arguments'] += tool_call.function.arguments
                     
                     # 处理reasoning内容（对于deepseek-reasoner模型）
                     if chat_request.model == "deepseek-reasoner" and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
@@ -264,8 +289,8 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                         full_content += content
                         yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
                 
-                # 如果有完整的工具调用
-                if current_delta_obj and hasattr(current_delta_obj, 'tool_calls') and current_delta_obj.tool_calls:
+                # 如果有工具调用，处理累积的工具调用信息
+                if has_tool_calls and accumulated_tool_calls:
                     # 收集当前聊天信息
                     assistant_message = {
                         "role": "assistant",
@@ -277,26 +302,28 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                     
                     # 将当前助手消息添加到历史
                     openai_messages.append(assistant_message)
-                    logger.info(current_delta_obj)
-                    # 处理所有工具调用
-                    for tool_call in current_delta_obj.tool_calls:
-                        logger.info(tool_call)
-                        if not tool_call.function:
+                    
+                    # 处理所有累积的工具调用
+                    for idx, tool_info in accumulated_tool_calls.items():
+                        # 验证是否有足够的信息
+                        if not tool_info['id'] or not tool_info['name']:
+                            logger.info(f"工具调用信息不完整，跳过: {tool_info}")
                             continue
                             
-                        tool_name = tool_call.function.name
-                        arguments_str = tool_call.function.arguments or "{}"
+                        tool_name = tool_info['name']
+                        arguments_str = tool_info['arguments']
                         
                         try:
                             arguments = json.loads(arguments_str)
                         except json.JSONDecodeError:
+                            logger.info(f"解析工具参数失败，格式错误: {arguments_str}")
                             arguments = {}
                         
                         logger.info(f"模型请求调用工具: {tool_name}，参数: {arguments}")
                         
                         # 添加工具调用信息
                         tool_calls.append({
-                            "id": tool_call.id,
+                            "id": tool_info['id'],
                             "type": "function",
                             "function": {
                                 "name": tool_name,
@@ -331,7 +358,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                 # 将工具调用结果添加到历史记录中
                                 openai_messages.append({
                                     "role": "tool",
-                                    "tool_call_id": tool_call.id,
+                                    "tool_call_id": tool_info['id'],
                                     "content": result_content
                                 })
                                 
@@ -350,7 +377,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                 # 添加错误信息
                                 openai_messages.append({
                                     "role": "tool",
-                                    "tool_call_id": tool_call.id,
+                                    "tool_call_id": tool_info['id'],
                                     "content": error_msg
                                 })
                                 
@@ -363,6 +390,9 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                     # 添加工具调用信息到助手消息
                     if tool_calls:
                         assistant_message["tool_calls"] = tool_calls
+                    
+                    # 清空累积的工具调用信息，准备下一轮
+                    accumulated_tool_calls.clear()
                     
                     # 开始下一轮，获取助手根据工具结果的回复
                     is_first_response = False
