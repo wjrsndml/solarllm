@@ -441,30 +441,53 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
             const assistantMessage: Message = {
               role: 'assistant',
               content: fullContent,
-              reasoning_content: fullReasoning || undefined
+              reasoning_content: fullReasoning || undefined,
+              images: []  // 初始化为空数组
             };
             
-            // 检查消息内容中是否包含图像路径信息
-            const imgRegex = /simulation_results\/[\w.-]+\.png/g;
+            // 检查消息内容中是否包含图像路径信息 - 同时匹配两种目录
+            const imgRegex = /(simulation_results|plot_results)\/[\w.-]+\.png/g;
             const imgMatches = fullContent.match(imgRegex);
             
-            // 如果消息中包含图像路径，将其添加到images状态中
+            // 如果消息中包含图像路径，将其添加到images状态中和消息中
             if (imgMatches && imgMatches.length > 0) {
+              // 处理图片URL
+              const imageUrls: string[] = [];
+              
+              // 为每个图像路径生成API URL，并确保不会添加重复的URL
+              imgMatches.forEach(imgPath => {
+                const imgUrl = `${API_BASE_URL}/api/files/${encodeURIComponent(imgPath)}`;
+                // 检查是否已存在相同URL，避免重复添加
+                if (!imageUrls.includes(imgUrl)) {
+                  imageUrls.push(imgUrl);
+                }
+              });
+              
+              // 更新消息中的图片数组
+              assistantMessage.images = [...(assistantMessage.images || []), ...imageUrls];
+              
+              // 更新UI状态中的图片
               setImages(prev => {
-                const messageImages = [...(prev[tempMsgId] || [])];
-                
-                // 为每个图像路径生成API URL，并确保不会添加重复的URL
-                imgMatches.forEach(imgPath => {
-                  const imgUrl = `${API_BASE_URL}/api/files/${encodeURIComponent(imgPath)}`;
-                  // 检查是否已存在相同URL，避免重复添加
-                  if (!messageImages.includes(imgUrl)) {
-                    messageImages.push(imgUrl);
-                  }
-                });
-                
+                const messageImages = [...(prev[tempMsgId] || []), ...imageUrls];
                 return {...prev, [tempMsgId]: messageImages};
               });
             }
+            
+            // 更新工具生成的base64图像（如果有）
+            setImages(prevImages => {
+              // 获取当前累积的图片
+              const currentImages = prevImages[tempMsgId] || [];
+              
+              // 找出base64图像
+              const base64Images = currentImages.filter(img => !img.startsWith('http'));
+              
+              // 如果有base64图像，将其添加到消息中
+              if (base64Images.length > 0) {
+                assistantMessage.images = [...(assistantMessage.images || []), ...base64Images];
+              }
+              
+              return prevImages; // 返回原状态，不做修改
+            });
             
             // 立即更新对话状态
             const finalMessages = [...updatedMessages, assistantMessage];
@@ -495,9 +518,10 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
             }
           } else if (chunk.type === 'image') {
             const imageContent = chunk.content as ImageContent;
+            const imgData = imageContent.image_data;
+            
             setImages(prev => {
               const messageImages = [...(prev[tempMsgId] || [])];
-              const imgData = imageContent.image_data;
               
               // 检查是否已存在相同的base64数据，避免重复添加
               if (!messageImages.includes(imgData)) {
@@ -647,7 +671,8 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
       <>
         {currentConversation.messages.map((msg, index) => {
           const messageId = `${currentConversation.id}-${index}`;
-          const messageImages = images[messageId] || [];
+          // 优先使用消息中存储的图片，否则使用状态中的图片
+          const messageImages = msg.images || images[messageId] || [];
           
           return (
             <MessageCard 

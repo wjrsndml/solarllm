@@ -48,8 +48,11 @@ app.add_middleware(
 async def get_file(file_path: str):
     """提供对生成的图表和文件的访问"""
     try:
-        # 设置安全限制，只允许访问simulation_results目录
-        if not file_path.startswith("simulation_results/"):
+        # 设置安全限制，只允许访问指定目录
+        allowed_prefixes = ["simulation_results/", "plot_results/"]
+        is_allowed = any(file_path.startswith(prefix) for prefix in allowed_prefixes)
+        
+        if not is_allowed:
             raise HTTPException(status_code=403, detail="Access forbidden")
         
         # 构建文件的完整路径

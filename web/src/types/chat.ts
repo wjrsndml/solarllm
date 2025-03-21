@@ -3,6 +3,7 @@ export interface Message {
   content: string;
   reasoning_content?: string;
   context_info?: ContextInfo[];
+  images?: string[];  // 用于存储图片的URL或base64数据
 }
 
 export interface ContextInfo {
