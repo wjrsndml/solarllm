@@ -11,16 +11,17 @@ import uuid
 import json
 import asyncio
 from starlette.background import BackgroundTask
-from embed import TextEmbedding  # 导入嵌入模块
-
-# 加载环境变量
-load_dotenv()
-
-# 导入太阳能电池参数预测功能
-from mlutil import predict_solar_params
 import base64
 import io
 from matplotlib.figure import Figure
+
+# MCP客户端相关导入
+from contextlib import AsyncExitStack
+from mcp import ClientSession
+from mcp.client.sse import sse_client
+
+# 加载环境变量
+load_dotenv()
 
 app = FastAPI()
 
@@ -42,25 +43,105 @@ client = OpenAI(
 # 内存存储对话历史
 conversations: Dict[str, dict] = {}
 
-# 初始化文本嵌入
-embedding_dir = os.getenv("EMBEDDING_DIR", "embedding")
-text_embedding = None
+# MCP服务器地址
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:12346/sse")
 
-# 在应用启动时加载嵌入
+# MCP客户端类
+class MCPClient:
+    def __init__(self):
+        # 初始化会话和流对象
+        self.session: Optional[ClientSession] = None
+        self._streams_context = None
+        self._session_context = None
+        
+    async def connect(self, server_url: str = MCP_SERVER_URL):
+        """连接到MCP服务器"""
+        try:
+            # 使用SSE客户端连接到服务器
+            self._streams_context = sse_client(url=server_url)
+            streams = await self._streams_context.__aenter__()
+            
+            # 创建会话
+            self._session_context = ClientSession(*streams)
+            self.session = await self._session_context.__aenter__()
+            
+            # 初始化
+            await self.session.initialize()
+            
+            # 列出可用工具，验证连接
+            response = await self.session.list_tools()
+            tool_names = [tool.name for tool in response.tools]
+            print(f"已连接到MCP服务器，可用工具: {tool_names}")
+            return True
+        except Exception as e:
+            print(f"连接MCP服务器失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+            
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]):
+        """调用MCP工具"""
+        if not self.session:
+            raise ValueError("MCP会话未初始化，请先调用connect()")
+        
+        try:
+            result = await self.session.call_tool(tool_name, arguments)
+            return result
+        except Exception as e:
+            print(f"调用MCP工具 {tool_name} 失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    async def list_tools(self):
+        """获取可用工具列表"""
+        if not self.session:
+            raise ValueError("MCP会话未初始化，请先调用connect()")
+        
+        try:
+            response = await self.session.list_tools()
+            return response.tools
+        except Exception as e:
+            print(f"获取工具列表失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
+            
+    async def cleanup(self):
+        """清理会话和连接"""
+        try:
+            if self._session_context:
+                await self._session_context.__aexit__(None, None, None)
+            if self._streams_context:
+                await self._streams_context.__aexit__(None, None, None)
+            print("已断开MCP连接")
+        except Exception as e:
+            print(f"清理MCP连接失败: {str(e)}")
+
+# 全局MCP客户端实例
+mcp_client = MCPClient()
+
+# 在应用启动时连接MCP服务器
 @app.on_event("startup")
 async def startup_event():
-    global text_embedding
+    global mcp_client
     try:
-        if os.path.exists(embedding_dir):
-            print(f"正在从 {embedding_dir} 加载嵌入向量...")
-            text_embedding = TextEmbedding.load_with_file_info(embedding_dir)
-            print(f"嵌入向量加载完成，共 {len(text_embedding)} 个向量")
+        # 连接到MCP服务器
+        connected = await mcp_client.connect()
+        if connected:
+            print(f"成功连接到MCP服务器: {MCP_SERVER_URL}")
         else:
-            print(f"嵌入向量目录 {embedding_dir} 不存在，跳过加载")
+            print(f"警告: 无法连接到MCP服务器: {MCP_SERVER_URL}，将使用本地功能")
     except Exception as e:
-        print(f"加载嵌入向量时出错: {str(e)}")
+        print(f"MCP连接初始化失败: {str(e)}")
         import traceback
         traceback.print_exc()
+
+# 在应用关闭时断开MCP连接
+@app.on_event("shutdown")
+async def shutdown_event():
+    global mcp_client
+    await mcp_client.cleanup()
 
 class Message(BaseModel):
     role: str
@@ -79,120 +160,218 @@ class Conversation(BaseModel):
     created_at: str
     messages: List[Message]
 
-# 搜索相关文本并返回上下文信息
-def search_context(query: str, top_n: int = 5) -> List[Dict[str, str]]:
-    global text_embedding
-    context_info = []
-    
-    if text_embedding is None:
-        print("嵌入向量未加载，无法搜索上下文")
-        return context_info
-    
-    try:
-        # 搜索相似文本
-        similar_texts = text_embedding.search_similar_texts(query, top_n=top_n)
-        
-        # 构建上下文信息
-        for text, similarity, file_name in similar_texts:
-            context_info.append({
-                "file_name": file_name or "未知文件",
-                "content": text[:500] + "..." if len(text) > 500 else text,  # 限制内容长度
-                "similarity": f"{similarity:.4f}"
-            })
-        
-        print(f"为查询 '{query}' 找到 {len(context_info)} 个相关上下文")
-    except Exception as e:
-        print(f"搜索上下文时出错: {str(e)}")
-        import traceback
-        traceback.print_exc()
-    
-    return context_info
-
 async def generate_stream_response(chat_request: ChatRequest, disconnect_event: asyncio.Event):
     try:
         print(f"开始处理请求，模型: {chat_request.model}")
         
-        # 获取用户最新的消息
-        user_message = chat_request.messages[-1]
+        # 准备OpenAI消息格式
+        openai_messages = [{"role": msg.role, "content": msg.content} for msg in chat_request.messages]
         
-        # 如果是用户消息，搜索相关上下文
-        context_info = []
-        if user_message.role == "user":
-            context_info = search_context(user_message.content)
-            
-            # 将上下文信息添加到用户消息中
-            user_message.context_info = context_info
-            
-            # 如果找到了上下文，构建系统提示
-            if context_info:
-                context_text = "\n\n相关参考资料:\n"
-                for i, ctx in enumerate(context_info):
-                    context_text += f"{i+1}. 文件: {ctx['file_name']}\n内容: {ctx['content']}\n\n"
+        # 获取MCP工具列表
+        available_tools = []
+        if mcp_client.session:
+            try:
+                tools = await mcp_client.list_tools()
+                available_tools = [{ 
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.inputSchema
+                    }
+                } for tool in tools]
+                print(f"为模型提供了 {len(available_tools)} 个可用工具")
+            except Exception as e:
+                print(f"获取工具列表失败: {str(e)}")
                 
-                # 添加系统消息，提供上下文
-                system_message = {
-                    "role": "system", 
-                    "content": f"以下是与用户问题相关的参考资料，请在回答时参考这些内容：\n{context_text}\n请基于以上参考资料回答用户的问题，如果参考资料中没有相关信息，请如实告知。"
-                }
-                
-                # 准备发送给模型的消息
-                messages_for_model = [system_message]
-                for msg in chat_request.messages:
-                    messages_for_model.append({"role": msg.role, "content": msg.content})
-            else:
-                # 如果没有找到上下文，直接使用原始消息
-                messages_for_model = [{"role": msg.role, "content": msg.content} for msg in chat_request.messages]
-        else:
-            # 非用户消息，直接使用原始消息
-            messages_for_model = [{"role": msg.role, "content": msg.content} for msg in chat_request.messages]
-        
-        # 发送请求到模型
-        response = client.chat.completions.create(
-            model=chat_request.model,
-            messages=messages_for_model,
-            stream=True
-        )
-
+        # 初始记录完整内容
         full_content = ""
         full_reasoning = ""
         
-        # 首先发送上下文信息
-        if context_info:
-            context_data = json.dumps({'type': 'context', 'content': context_info})
-            yield f"data: {context_data}\n\n"
+        # 处理上下文与工具调用的标志
+        has_sent_context = False
+        is_first_response = True
+        tool_results = []
         
-        for chunk in response:
-            # 检查客户端是否断开连接
-            if disconnect_event.is_set():
-                print("检测到客户端断开连接，停止生成")
+        while True:
+            try:
+                # 初始API调用或后续调用
+                if is_first_response:
+                    # 首次调用，可能使用工具
+                    response = client.chat.completions.create(
+                        model=chat_request.model,
+                        messages=openai_messages,
+                        tools=available_tools if available_tools else None,
+                        stream=True
+                    )
+                else:
+                    # 后续调用，无需再次提供工具列表
+                    response = client.chat.completions.create(
+                        model=chat_request.model,
+                        messages=openai_messages,
+                        stream=True
+                    )
+                
+                # 收集完整内容
+                current_content = ""
+                current_delta_obj = None
+                
+                for chunk in response:
+                    # 检查客户端是否断开连接
+                    if disconnect_event.is_set():
+                        print("检测到客户端断开连接，停止生成")
+                        break
+                    
+                    delta = chunk.choices[0].delta
+                    
+                    # 首次有内容时，发送上下文信息（如果有）
+                    if not has_sent_context and (hasattr(delta, 'content') and delta.content or 
+                                               hasattr(delta, 'tool_calls') and delta.tool_calls):
+                        has_sent_context = True
+                        if tool_results:
+                            # 如果有工具调用结果，将其作为上下文发送
+                            context_info = [
+                                {"file_name": result["call"], "content": result["summary"]} 
+                                for result in tool_results
+                            ]
+                            if context_info:
+                                context_data = json.dumps({'type': 'context', 'content': context_info})
+                                yield f"data: {context_data}\n\n"
+                    
+                    # 处理工具调用请求
+                    if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                        # 记录最新的工具调用请求
+                        current_delta_obj = delta
+                    
+                    # 处理reasoning内容（对于deepseek-reasoner模型）
+                    if chat_request.model == "deepseek-reasoner" and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                        reasoning = delta.reasoning_content
+                        full_reasoning += reasoning
+                        yield f"data: {json.dumps({'type': 'reasoning', 'content': reasoning})}\n\n"
+                    
+                    # 处理常规内容
+                    if hasattr(delta, 'content') and delta.content:
+                        content = delta.content
+                        current_content += content
+                        full_content += content
+                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                
+                # 如果有完整的工具调用
+                if current_delta_obj and hasattr(current_delta_obj, 'tool_calls') and current_delta_obj.tool_calls:
+                    # 收集当前聊天信息
+                    assistant_message = {
+                        "role": "assistant",
+                        "content": current_content if current_content else None
+                    }
+                    
+                    # 添加工具调用
+                    tool_calls = []
+                    
+                    # 将当前助手消息添加到历史
+                    openai_messages.append(assistant_message)
+                    
+                    # 处理所有工具调用
+                    for tool_call in current_delta_obj.tool_calls:
+                        if not tool_call.function:
+                            continue
+                            
+                        tool_name = tool_call.function.name
+                        arguments_str = tool_call.function.arguments or "{}"
+                        
+                        try:
+                            arguments = json.loads(arguments_str)
+                        except json.JSONDecodeError:
+                            arguments = {}
+                        
+                        print(f"模型请求调用工具: {tool_name}，参数: {arguments}")
+                        
+                        # 添加工具调用信息
+                        tool_calls.append({
+                            "id": tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_name,
+                                "arguments": arguments_str
+                            }
+                        })
+                        
+                        # 执行工具调用
+                        if mcp_client.session:
+                            try:
+                                result = await mcp_client.call_tool(tool_name, arguments)
+                                
+                                # 处理结果内容
+                                result_content = ""
+                                
+                                # 从文本内容生成摘要
+                                if hasattr(result.content, 'text'):
+                                    text_content = result.content.text
+                                    
+                                    # 将字典或列表转换为字符串
+                                    if isinstance(text_content, dict) or isinstance(text_content, list):
+                                        result_content = json.dumps(text_content, ensure_ascii=False)
+                                    else:
+                                        result_content = str(text_content)
+                                
+                                # 检查是否有图像结果
+                                has_images = hasattr(result.content, 'image') and len(result.content.image) > 0
+                                if has_images:
+                                    # 添加图像信息到结果
+                                    result_content += "\n(结果包含图像数据)"
+                                
+                                # 将工具调用结果添加到历史记录中
+                                openai_messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": result_content
+                                })
+                                
+                                # 记录工具结果，用于上下文显示
+                                tool_results.append({
+                                    "call": tool_name,
+                                    "summary": f"工具 {tool_name} 返回结果: {result_content[:200]}..." if len(result_content) > 200 else result_content
+                                })
+                                
+                                print(f"工具 {tool_name} 调用成功")
+                                
+                            except Exception as e:
+                                error_msg = f"工具 {tool_name} 调用失败: {str(e)}"
+                                print(error_msg)
+                                
+                                # 添加错误信息
+                                openai_messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": error_msg
+                                })
+                                
+                                # 记录错误结果
+                                tool_results.append({
+                                    "call": tool_name,
+                                    "summary": error_msg
+                                })
+                    
+                    # 添加工具调用信息到助手消息
+                    if tool_calls:
+                        assistant_message["tool_calls"] = tool_calls
+                    
+                    # 开始下一轮，获取助手根据工具结果的回复
+                    is_first_response = False
+                    continue
+                
+                # 如果没有工具调用，或者已经完成了工具调用和响应
                 break
                 
-            if chat_request.model == "deepseek-reasoner":
-                delta = chunk.choices[0].delta
-                
-                
-                if hasattr(delta, 'reasoning_content') and delta.reasoning_content is not None:
-                    reasoning = delta.reasoning_content or ""
-                    full_reasoning += reasoning
-                    if reasoning:
-                        data = json.dumps({'type': 'reasoning', 'content': reasoning})
-                        yield f"data: {data}\n\n"
-                
-                if hasattr(delta, 'content') and delta.content is not None:
-                    content = delta.content or ""
-                    full_content += content
-                    if content:
-                        data = json.dumps({'type': 'content', 'content': content})
-                        yield f"data: {data}\n\n"
-            else:
-                content = chunk.choices[0].delta.content or ""
-                full_content += content
-                if content:
-                    yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
-
+            except Exception as e:
+                error_msg = f"处理请求时出错: {str(e)}"
+                print(error_msg)
+                yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
+                break
+            
         print(f"请求处理完成，模型: {chat_request.model}")
-        print(f"完整推理内容: {full_reasoning}")
-        print(f"完整回答内容: {full_content}")
+        if full_reasoning:
+            print(f"完整推理内容长度: {len(full_reasoning)} 字符")
+        print(f"完整回答内容长度: {len(full_content)} 字符")
         
         # 发送完成信号
         yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
@@ -204,8 +383,8 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                 if full_content:
                     full_content += " [已中断]"
             
-            # 保存用户消息（包含上下文信息）
-            user_message_dict = user_message.__dict__
+            # 保存用户消息
+            user_message = chat_request.messages[-1].__dict__
             
             # 保存助手回复
             assistant_message = {
@@ -215,7 +394,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
             }
             
             # 更新对话历史
-            conversations[chat_request.conversation_id]["messages"].append(user_message_dict)
+            conversations[chat_request.conversation_id]["messages"].append(user_message)
             conversations[chat_request.conversation_id]["messages"].append(assistant_message)
             
             # 如果是新对话的第一条消息，用它来命名对话
@@ -225,10 +404,11 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                 conversations[chat_request.conversation_id]["title"] = title
 
     except Exception as e:
-        yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
-        print(f"生成响应时出错: {str(e)}")
+        error_msg = f"生成响应时出错: {str(e)}"
+        print(error_msg)
         import traceback
         traceback.print_exc()
+        yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
 
 @app.post("/api/chat/create")
 async def create_conversation():
@@ -342,10 +522,11 @@ async def get_default_params():
     }
     return default_params
 
-# 太阳能电池参数预测
+# 太阳能电池参数预测，通过主流程中的工具调用已覆盖，此处保留API兼容性
 @app.post("/api/solar/predict")
 async def predict_params(params: SolarParams):
     try:
+        global mcp_client
         
         # 将参数转为字典
         input_params = {
@@ -359,31 +540,53 @@ async def predict_params(params: SolarParams):
             'Nd_rear': params.Nd_rear,
             'Nt_polySi_top': params.Nt_polySi_top,
             'Nt_polySi_rear': params.Nt_polySi_rear,
-            'Dit Si-SiOx': params.Dit_Si_SiOx,
-            'Dit SiOx-Poly': params.Dit_SiOx_Poly,
-            'Dit top': params.Dit_top
+            'Dit_Si_SiOx': params.Dit_Si_SiOx,
+            'Dit_SiOx_Poly': params.Dit_SiOx_Poly,
+            'Dit_top': params.Dit_top
         }
         
-        # 预测参数
-        predictions, fig = predict_solar_params(input_params)
-        
-        # 将图像转换为base64编码
-        buf = io.BytesIO()
-        fig.savefig(buf, format='png')
-        buf.seek(0)
-        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
-        
-        # 返回预测结果和图像
-        return {
-            "predictions": predictions,
-            "jv_curve": img_base64
-        }
+        # 检查MCP客户端是否可用
+        if mcp_client.session:
+            # 使用MCP服务的simulate_solar_cell工具
+            print(f"使用MCP服务进行太阳能电池仿真")
+            result = await mcp_client.call_tool("simulate_solar_cell", input_params)
+            
+            # 处理结果
+            if hasattr(result.content, 'text') and 'parameters' in result.content.text:
+                predictions = result.content.text['parameters']
+                
+                # 从MCP获取图像
+                jv_curve_image = None
+                if hasattr(result.content, 'image') and len(result.content.image) > 0:
+                    # 使用第一个图像
+                    img_data = result.content.image[0].data
+                    
+                    # 转换为base64编码
+                    img_base64 = base64.b64encode(img_data).decode('utf-8')
+                    
+                    # 返回预测结果和图像
+                    return {
+                        "predictions": predictions,
+                        "jv_curve": img_base64
+                    }
+                else:
+                    # 返回仅有预测结果
+                    return {
+                        "predictions": predictions,
+                        "jv_curve": None
+                    }
+            else:
+                raise HTTPException(status_code=500, detail="MCP服务返回格式不正确")
+        else:
+            # MCP客户端不可用
+            raise HTTPException(status_code=503, detail="MCP服务不可用，无法执行预测")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 直接运行入口点，方便在 IDE 中调试
+# 直接运行入口点
 if __name__ == "__main__":
     import uvicorn
-    print("正在启动调试服务器...")
+    print("正在启动服务器...")
     print("API 密钥:", os.getenv("DEEPSEEK_API_KEY")[:5] + "..." if os.getenv("DEEPSEEK_API_KEY") else "未设置")
+    print(f"MCP服务器地址: {MCP_SERVER_URL}")
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -17,7 +17,7 @@ from starlette.routing import Mount, Route
 from mcp.server import Server
 import uvicorn
 from dotenv import load_dotenv
-from api.embed import TextEmbedding  # 导入嵌入模块
+from embed import TextEmbedding  # 导入嵌入模块
 load_dotenv()
 
 # 初始化FastMCP服务器
