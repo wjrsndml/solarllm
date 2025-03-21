@@ -14,7 +14,15 @@ from starlette.background import BackgroundTask
 import base64
 import io
 from matplotlib.figure import Figure
+import logging
 
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename='api.log'
+)
+logger = logging.getLogger(__name__)
 # MCP客户端相关导入
 from contextlib import AsyncExitStack
 from mcp import ClientSession
@@ -71,10 +79,10 @@ class MCPClient:
             # 列出可用工具，验证连接
             response = await self.session.list_tools()
             tool_names = [tool.name for tool in response.tools]
-            print(f"已连接到MCP服务器，可用工具: {tool_names}")
+            logger.info(f"已连接到MCP服务器，可用工具: {tool_names}")
             return True
         except Exception as e:
-            print(f"连接MCP服务器失败: {str(e)}")
+            logger.info(f"连接MCP服务器失败: {str(e)}")
             import traceback
             traceback.print_exc()
             return False
@@ -88,7 +96,7 @@ class MCPClient:
             result = await self.session.call_tool(tool_name, arguments)
             return result
         except Exception as e:
-            print(f"调用MCP工具 {tool_name} 失败: {str(e)}")
+            logger.info(f"调用MCP工具 {tool_name} 失败: {str(e)}")
             import traceback
             traceback.print_exc()
             raise
@@ -102,7 +110,7 @@ class MCPClient:
             response = await self.session.list_tools()
             return response.tools
         except Exception as e:
-            print(f"获取工具列表失败: {str(e)}")
+            logger.info(f"获取工具列表失败: {str(e)}")
             import traceback
             traceback.print_exc()
             raise
@@ -114,9 +122,9 @@ class MCPClient:
                 await self._session_context.__aexit__(None, None, None)
             if self._streams_context:
                 await self._streams_context.__aexit__(None, None, None)
-            print("已断开MCP连接")
+            logger.info("已断开MCP连接")
         except Exception as e:
-            print(f"清理MCP连接失败: {str(e)}")
+            logger.info(f"清理MCP连接失败: {str(e)}")
 
 # 全局MCP客户端实例
 mcp_client = MCPClient()
@@ -129,11 +137,11 @@ async def startup_event():
         # 连接到MCP服务器
         connected = await mcp_client.connect()
         if connected:
-            print(f"成功连接到MCP服务器: {MCP_SERVER_URL}")
+            logger.info(f"成功连接到MCP服务器: {MCP_SERVER_URL}")
         else:
-            print(f"警告: 无法连接到MCP服务器: {MCP_SERVER_URL}，将使用本地功能")
+            logger.info(f"警告: 无法连接到MCP服务器: {MCP_SERVER_URL}，将使用本地功能")
     except Exception as e:
-        print(f"MCP连接初始化失败: {str(e)}")
+        logger.info(f"MCP连接初始化失败: {str(e)}")
         import traceback
         traceback.print_exc()
 
@@ -162,7 +170,7 @@ class Conversation(BaseModel):
 
 async def generate_stream_response(chat_request: ChatRequest, disconnect_event: asyncio.Event):
     try:
-        print(f"开始处理请求，模型: {chat_request.model}")
+        logger.info(f"开始处理请求，模型: {chat_request.model}")
         
         # 准备OpenAI消息格式
         openai_messages = [{"role": msg.role, "content": msg.content} for msg in chat_request.messages]
@@ -180,9 +188,9 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                         "parameters": tool.inputSchema
                     }
                 } for tool in tools]
-                print(f"为模型提供了 {len(available_tools)} 个可用工具")
+                logger.info(f"为模型提供了 {len(available_tools)} 个可用工具")
             except Exception as e:
-                print(f"获取工具列表失败: {str(e)}")
+                logger.info(f"获取工具列表失败: {str(e)}")
                 
         # 初始记录完整内容
         full_content = ""
@@ -219,7 +227,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                 for chunk in response:
                     # 检查客户端是否断开连接
                     if disconnect_event.is_set():
-                        print("检测到客户端断开连接，停止生成")
+                        logger.info("检测到客户端断开连接，停止生成")
                         break
                     
                     delta = chunk.choices[0].delta
@@ -269,9 +277,10 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                     
                     # 将当前助手消息添加到历史
                     openai_messages.append(assistant_message)
-                    
+                    logger.info(current_delta_obj)
                     # 处理所有工具调用
                     for tool_call in current_delta_obj.tool_calls:
+                        logger.info(tool_call)
                         if not tool_call.function:
                             continue
                             
@@ -283,7 +292,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                         except json.JSONDecodeError:
                             arguments = {}
                         
-                        print(f"模型请求调用工具: {tool_name}，参数: {arguments}")
+                        logger.info(f"模型请求调用工具: {tool_name}，参数: {arguments}")
                         
                         # 添加工具调用信息
                         tool_calls.append({
@@ -332,11 +341,11 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                     "summary": f"工具 {tool_name} 返回结果: {result_content[:200]}..." if len(result_content) > 200 else result_content
                                 })
                                 
-                                print(f"工具 {tool_name} 调用成功")
+                                logger.info(f"工具 {tool_name} 调用成功")
                                 
                             except Exception as e:
                                 error_msg = f"工具 {tool_name} 调用失败: {str(e)}"
-                                print(error_msg)
+                                logger.info(error_msg)
                                 
                                 # 添加错误信息
                                 openai_messages.append({
@@ -364,14 +373,14 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                 
             except Exception as e:
                 error_msg = f"处理请求时出错: {str(e)}"
-                print(error_msg)
+                logger.info(error_msg)
                 yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
                 break
             
-        print(f"请求处理完成，模型: {chat_request.model}")
+        logger.info(f"请求处理完成，模型: {chat_request.model}")
         if full_reasoning:
-            print(f"完整推理内容长度: {len(full_reasoning)} 字符")
-        print(f"完整回答内容长度: {len(full_content)} 字符")
+            logger.info(f"完整推理内容长度: {len(full_reasoning)} 字符")
+        logger.info(f"完整回答内容长度: {len(full_content)} 字符")
         
         # 发送完成信号
         yield f"data: {json.dumps({'type': 'done', 'content': ''})}\n\n"
@@ -405,7 +414,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
 
     except Exception as e:
         error_msg = f"生成响应时出错: {str(e)}"
-        print(error_msg)
+        logger.info(error_msg)
         import traceback
         traceback.print_exc()
         yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
@@ -438,15 +447,15 @@ async def send_message(chat_request: ChatRequest, request: Request):
             conversation = await create_conversation()
             chat_request.conversation_id = conversation["id"]
         
-        print(f"处理聊天请求: 模型={chat_request.model}, 会话ID={chat_request.conversation_id}")
-        print(f"消息内容: {chat_request.messages[-1].content}")
+        logger.info(f"处理聊天请求: 模型={chat_request.model}, 会话ID={chat_request.conversation_id}")
+        logger.info(f"消息内容: {chat_request.messages[-1].content}")
         
         # 创建一个事件来跟踪客户端断开连接
         disconnect_event = asyncio.Event()
         
         # 创建一个任务来监听客户端断开连接
         async def on_disconnect():
-            print(f"客户端断开连接，会话ID={chat_request.conversation_id}")
+            logger.info(f"客户端断开连接，会话ID={chat_request.conversation_id}")
             disconnect_event.set()
         
         return StreamingResponse(
@@ -460,7 +469,7 @@ async def send_message(chat_request: ChatRequest, request: Request):
             background=BackgroundTask(on_disconnect)
         )
     except Exception as e:
-        print(f"处理聊天请求时出错: {str(e)}")
+        logger.info(f"处理聊天请求时出错: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -548,7 +557,7 @@ async def predict_params(params: SolarParams):
         # 检查MCP客户端是否可用
         if mcp_client.session:
             # 使用MCP服务的simulate_solar_cell工具
-            print(f"使用MCP服务进行太阳能电池仿真")
+            logger.info(f"使用MCP服务进行太阳能电池仿真")
             result = await mcp_client.call_tool("simulate_solar_cell", input_params)
             
             # 处理结果
@@ -586,7 +595,7 @@ async def predict_params(params: SolarParams):
 # 直接运行入口点
 if __name__ == "__main__":
     import uvicorn
-    print("正在启动服务器...")
-    print("API 密钥:", os.getenv("DEEPSEEK_API_KEY")[:5] + "..." if os.getenv("DEEPSEEK_API_KEY") else "未设置")
-    print(f"MCP服务器地址: {MCP_SERVER_URL}")
+    logger.info("正在启动服务器...")
+    logger.info("API 密钥:", os.getenv("DEEPSEEK_API_KEY")[:5] + "..." if os.getenv("DEEPSEEK_API_KEY") else "未设置")
+    logger.info(f"MCP服务器地址: {MCP_SERVER_URL}")
     uvicorn.run(app, host="0.0.0.0", port=8000)
