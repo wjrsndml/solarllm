@@ -43,6 +43,201 @@ def fig_to_image(fig: Figure) -> Image:
     return Image(data=img_data, format="png")
 
 @mcp.tool()
+async def draw_curve(
+    x_data: list,         # x轴数据列表
+    y_data: list,         # y轴数据列表
+    x_label: str = "X", # x轴标签
+    y_label: str = "Y", # y轴标签
+    title: str = "Graph", # 图表标题
+    line_style: str = "o-", # 线型，默认为带点的实线
+    color: str = "blue",  # 线条颜色
+    fig_size: list = [10, 6], # 图表尺寸 [宽, 高]
+    save_file: bool = True, # 是否保存为文件
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    绘制自定义曲线图
+    
+    根据提供的x轴和y轴数据绘制曲线图，并提供自定义参数来调整图表的外观。
+    
+    参数:
+    - x_data: x轴数据点列表
+    - y_data: y轴数据点列表
+    - x_label: x轴标签
+    - y_label: y轴标签
+    - title: 图表标题
+    - line_style: 线型样式，如'o-'、'--'、'-.'等
+    - color: 线条颜色
+    - fig_size: 图表尺寸 [宽, 高]
+    - save_file: 是否保存为本地文件
+    
+    返回:
+    - 曲线图图像
+    - 如果save_file为True，还会返回图像文件路径
+    """
+    if ctx:
+        ctx.info("开始绘制曲线图...")
+    
+    # 检查数据
+    if len(x_data) != len(y_data):
+        raise ValueError("x轴和y轴数据长度必须相同")
+    
+    # 创建图表
+    fig = plt.figure(figsize=(fig_size[0], fig_size[1]))
+    plt.plot(x_data, y_data, line_style, color=color)
+    
+    # 设置图表标签和标题
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.title(title)
+    
+    # 添加网格线以提高可读性
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    # 自动调整布局
+    plt.tight_layout()
+    
+    # 保存图像文件路径（如果需要）
+    file_path = None
+    if save_file:
+        # 确保输出目录存在
+        output_dir = os.getenv("OUTPUT_DIR", "plot_results")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 使用当前时间创建文件名，确保不会重复
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        file_path = os.path.join(output_dir, f"curve_{timestamp}.png")
+        
+        # 保存图像
+        plt.savefig(file_path)
+        
+        if ctx:
+            ctx.info(f"曲线图已保存至: {file_path}")
+    
+    # 转换图像为MCP Image对象
+    curve_image = fig_to_image(fig)
+    plt.close(fig)
+    
+    if ctx:
+        ctx.info("曲线图绘制完成!")
+    
+    # 返回结果
+    result = {
+        "curve_image": curve_image
+    }
+    
+    if file_path:
+        result["file_path"] = file_path
+    
+    return result
+
+@mcp.tool()
+async def draw_table(
+    table_data: list,        # 二维表格数据
+    col_labels: list = None, # 列标签
+    row_labels: list = None, # 行标签
+    title: str = "Table", # 表格标题
+    fig_size: list = [10, 6], # 图表尺寸 [宽, 高]
+    save_file: bool = True,  # 是否保存为文件
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    绘制数据表格
+    
+    将二维数据渲染为可视化表格。
+    
+    参数:
+    - table_data: 二维表格数据，格式为嵌套列表
+    - col_labels: 列标签列表
+    - row_labels: 行标签列表
+    - title: 表格标题
+    - fig_size: 图表尺寸 [宽, 高]
+    - save_file: 是否保存为本地文件
+    
+    返回:
+    - 表格图像
+    - 如果save_file为True，还会返回图像文件路径
+    """
+    if ctx:
+        ctx.info("开始绘制数据表格...")
+    
+    # 检查输入数据
+    if not isinstance(table_data, list) or not all(isinstance(row, list) for row in table_data):
+        raise ValueError("表格数据必须是二维列表")
+    
+    # 如果没有提供行列标签，创建默认标签
+    num_rows = len(table_data)
+    num_cols = len(table_data[0]) if num_rows > 0 else 0
+    
+    if col_labels is None:
+        col_labels = [f"列 {i+1}" for i in range(num_cols)]
+    
+    if row_labels is None:
+        row_labels = [f"行 {i+1}" for i in range(num_rows)]
+    
+    # 创建图形和表格
+    fig, ax = plt.subplots(figsize=(fig_size[0], fig_size[1]))
+    
+    # 隐藏轴线
+    ax.axis('tight')
+    ax.axis('off')
+    
+    # 创建表格
+    table = ax.table(
+        cellText=table_data,
+        rowLabels=row_labels,
+        colLabels=col_labels,
+        loc='center',
+        cellLoc='center'
+    )
+    
+    # 设置标题
+    plt.title(title)
+    
+    # 调整表格样式
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    
+    # 自动调整行高
+    table.scale(1, 1.5)
+    
+    # 保存图像文件路径（如果需要）
+    file_path = None
+    if save_file:
+        # 确保输出目录存在
+        output_dir = os.getenv("OUTPUT_DIR", "plot_results")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 使用当前时间创建文件名，确保不会重复
+        import datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        file_path = os.path.join(output_dir, f"table_{timestamp}.png")
+        
+        # 保存图像
+        plt.savefig(file_path, bbox_inches='tight')
+        
+        if ctx:
+            ctx.info(f"表格已保存至: {file_path}")
+    
+    # 转换图像为MCP Image对象
+    table_image = fig_to_image(fig)
+    plt.close(fig)
+    
+    if ctx:
+        ctx.info("数据表格绘制完成!")
+    
+    # 返回结果
+    result = {
+        "table_image": table_image
+    }
+    
+    if file_path:
+        result["file_path"] = file_path
+    
+    return result
+
+@mcp.tool()
 async def simulate_solar_cell(
     Si_thk: float = 180.0,           # 硅片厚度(µm)
     t_SiO2: float = 1.4,             # 二氧化硅厚度(nm)

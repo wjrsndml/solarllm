@@ -78,3 +78,6 @@ test.py
 
 TOPConML/
 txt/
+
+api/simulation_results/
+api/plot_results/
