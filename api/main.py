@@ -16,7 +16,7 @@ import io
 from matplotlib.figure import Figure
 import logging
 from fastapi.staticfiles import StaticFiles
-
+from mlutil import predict_solar_params
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -627,7 +627,6 @@ async def get_default_params():
 @app.post("/api/solar/predict")
 async def predict_params(params: SolarParams):
     try:
-        global mcp_client
         
         # 将参数转为字典
         input_params = {
@@ -641,46 +640,25 @@ async def predict_params(params: SolarParams):
             'Nd_rear': params.Nd_rear,
             'Nt_polySi_top': params.Nt_polySi_top,
             'Nt_polySi_rear': params.Nt_polySi_rear,
-            'Dit_Si_SiOx': params.Dit_Si_SiOx,
-            'Dit_SiOx_Poly': params.Dit_SiOx_Poly,
-            'Dit_top': params.Dit_top
+            'Dit Si-SiOx': params.Dit_Si_SiOx,
+            'Dit SiOx-Poly': params.Dit_SiOx_Poly,
+            'Dit top': params.Dit_top
         }
         
-        # 检查MCP客户端是否可用
-        if mcp_client.session:
-            # 使用MCP服务的simulate_solar_cell工具
-            logger.info(f"使用MCP服务进行太阳能电池仿真")
-            result = await mcp_client.call_tool("simulate_solar_cell", input_params)
-            
-            # 处理结果
-            if hasattr(result.content, 'text') and 'parameters' in result.content.text:
-                predictions = result.content.text['parameters']
-                
-                # 从MCP获取图像
-                jv_curve_image = None
-                if hasattr(result.content, 'image') and len(result.content.image) > 0:
-                    # 使用第一个图像
-                    img_data = result.content.image[0].data
-                    
-                    # 转换为base64编码
-                    img_base64 = base64.b64encode(img_data).decode('utf-8')
-                    
-                    # 返回预测结果和图像
-                    return {
-                        "predictions": predictions,
-                        "jv_curve": img_base64
-                    }
-                else:
-                    # 返回仅有预测结果
-                    return {
-                        "predictions": predictions,
-                        "jv_curve": None
-                    }
-            else:
-                raise HTTPException(status_code=500, detail="MCP服务返回格式不正确")
-        else:
-            # MCP客户端不可用
-            raise HTTPException(status_code=503, detail="MCP服务不可用，无法执行预测")
+        # 预测参数
+        predictions, fig = predict_solar_params(input_params)
+        
+        # 将图像转换为base64编码
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        
+        # 返回预测结果和图像
+        return {
+            "predictions": predictions,
+            "jv_curve": img_base64
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
