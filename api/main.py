@@ -339,8 +339,12 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                 # 处理结果内容
                                 result_content = ""
                                 
-                                # 从文本内容生成摘要
-                                if hasattr(result.content, 'text'):
+                                # 处理不同类型的工具返回结果
+                                if isinstance(result.content, list) and all(hasattr(item, 'text') for item in result.content):
+                                    # 如果是TextContent对象列表，提取所有text属性并合并
+                                    result_content = " ".join(item.text for item in result.content)
+                                elif hasattr(result.content, 'text'):
+                                    # 单个TextContent对象
                                     text_content = result.content.text
                                     
                                     # 将字典或列表转换为字符串
@@ -348,6 +352,12 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                         result_content = json.dumps(text_content, ensure_ascii=False)
                                     else:
                                         result_content = str(text_content)
+                                else:
+                                    # 其他情况尝试JSON序列化
+                                    result_content = json.dumps(result.content) if not isinstance(result.content, str) else str(result.content)
+                                
+                                # 记录工具返回结果的类型，便于调试
+                                logger.info(f"工具 {tool_name} 返回结果类型: {type(result.content).__name__}")
                                 
                                 # 检查是否有图像结果
                                 has_images = hasattr(result.content, 'image') and len(result.content.image) > 0

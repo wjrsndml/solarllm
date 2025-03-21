@@ -606,7 +606,7 @@ def solar_simulation_help() -> str:
     
     - 硅片参数:
       - Si_thk: 硅片厚度(µm)，典型值为160-200
-      - t_SiO2: 二氧化硅厚度(nm)，典型值为1-2
+      - t_SiO2: 二氧化硅厚度(µm)，典型值为1-2
       - t_polySi_rear_P: 背面多晶硅厚度(nm)，典型值为50-150
     
     - 结构参数:
@@ -617,8 +617,8 @@ def solar_simulation_help() -> str:
     - 掺杂参数:
       - Nd_top: 顶部掺杂浓度(cm^-3)，典型值为1e19-1e21
       - Nd_rear: 背面掺杂浓度(cm^-3)，典型值为1e19-1e21
-      - Nt_polySi_top: 顶部多晶硅掺杂浓度(cm^-3)，典型值为1e19-1e21
-      - Nt_polySi_rear: 背面多晶硅掺杂浓度(cm^-3)，典型值为1e19-1e21
+      - Nt_polySi_top: 顶部缺陷浓度(cm^-3)，典型值为1e19-1e21
+      - Nt_polySi_rear: 背面缺陷浓度(cm^-3)，典型值为1e19-1e21
     
     - 界面参数:
       - Dit_Si_SiOx: Si-SiOx界面态密度(cm^-2)，典型值为1e9-1e12
