@@ -38,7 +38,7 @@ def test_file_path_image_sending():
     # 测试消息 - 一个会触发工具调用且返回file_path的消息
     # 这里需要确保使用的消息能触发返回file_path的工具调用
     message = {
-        "messages": [{"role": "user", "content": "模拟硅厚度为150的太阳能电池并展示结果"}],
+        "messages": [{"role": "user", "content": "批量模拟硅厚度为100-200的太阳能电池，间隔10，并展示结果"}],
         "model": "deepseek-chat",
         "conversation_id": session_id
     }

@@ -275,6 +275,10 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
   const [showContextInfo, setShowContextInfo] = useState(false);
   const [assistantMessageAdded, setAssistantMessageAdded] = useState(true);
   const [images, setImages] = useState<Record<string, string[]>>({});
+  const [imageSources, setImageSources] = useState<Record<string, string[]>>({});
+  const [imageToolNames, setImageToolNames] = useState<Record<string, string[]>>({});
+  const [messageSources, setMessageSources] = useState<Record<string, string[]>>({});
+  const [messageToolNames, setMessageToolNames] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     loadHistory();
@@ -473,21 +477,24 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
               });
             }
             
-            // 更新工具生成的base64图像（如果有）
-            setImages(prevImages => {
-              // 获取当前累积的图片
-              const currentImages = prevImages[tempMsgId] || [];
+            // 从状态中获取当前已累积的图像数据
+            const currentImages = images[tempMsgId] || [];
+            const currentImageSources = imageSources[tempMsgId] || [];
+            const currentImageToolNames = imageToolNames[tempMsgId] || [];
+            
+            // 添加已保存的图像数据到消息中
+            if (currentImages.length > 0) {
+              // 更新消息中的图片数组
+              assistantMessage.images = [...(assistantMessage.images || []), ...currentImages];
               
-              // 找出base64图像
-              const base64Images = currentImages.filter(img => !img.startsWith('http'));
-              
-              // 如果有base64图像，将其添加到消息中
-              if (base64Images.length > 0) {
-                assistantMessage.images = [...(assistantMessage.images || []), ...base64Images];
+              // 更新消息中的图像元数据
+              if (currentImageSources.length > 0) {
+                assistantMessage.imageSources = [...currentImageSources];
               }
-              
-              return prevImages; // 返回原状态，不做修改
-            });
+              if (currentImageToolNames.length > 0) {
+                assistantMessage.imageToolNames = [...currentImageToolNames];
+              }
+            }
             
             // 立即更新对话状态
             const finalMessages = [...updatedMessages, assistantMessage];
@@ -499,6 +506,23 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
             // 将tempMsgId与最终消息ID关联起来
             const finalMsgId = `${currentConversation.id}-${finalMessages.length - 1}`;
             setImages(prev => {
+              const result = {...prev};
+              if (prev[tempMsgId] && prev[tempMsgId].length > 0) {
+                result[finalMsgId] = [...prev[tempMsgId]];
+              }
+              return result;
+            });
+            
+            // 同样处理图像来源和工具名称
+            setImageSources(prev => {
+              const result = {...prev};
+              if (prev[tempMsgId] && prev[tempMsgId].length > 0) {
+                result[finalMsgId] = [...prev[tempMsgId]];
+              }
+              return result;
+            });
+            
+            setImageToolNames(prev => {
               const result = {...prev};
               if (prev[tempMsgId] && prev[tempMsgId].length > 0) {
                 result[finalMsgId] = [...prev[tempMsgId]];
@@ -519,17 +543,46 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
           } else if (chunk.type === 'image') {
             const imageContent = chunk.content as ImageContent;
             const imgData = imageContent.image_data;
+            const toolName = imageContent.tool_name;
+            const sourcePath = imageContent.source_path;
+            const imageIndex = imageContent.image_index;
             
+            // 保存图像数据
             setImages(prev => {
               const messageImages = [...(prev[tempMsgId] || [])];
-              
-              // 检查是否已存在相同的base64数据，避免重复添加
-              if (!messageImages.includes(imgData)) {
-                messageImages.push(imgData);
+              // 确保数组有足够的位置
+              while (messageImages.length <= imageIndex) {
+                messageImages.push('');
               }
-              
+              messageImages[imageIndex] = imgData;
               return {...prev, [tempMsgId]: messageImages};
             });
+            
+            // 保存图像来源路径
+            if (sourcePath) {
+              setImageSources(prev => {
+                const sources = [...(prev[tempMsgId] || [])];
+                // 确保数组有足够的位置
+                while (sources.length <= imageIndex) {
+                  sources.push('');
+                }
+                sources[imageIndex] = sourcePath;
+                return {...prev, [tempMsgId]: sources};
+              });
+            }
+            
+            // 保存工具名称
+            if (toolName) {
+              setImageToolNames(prev => {
+                const toolNames = [...(prev[tempMsgId] || [])];
+                // 确保数组有足够的位置
+                while (toolNames.length <= imageIndex) {
+                  toolNames.push('');
+                }
+                toolNames[imageIndex] = toolName;
+                return {...prev, [tempMsgId]: toolNames};
+              });
+            }
           }
           scrollToBottom();
         },
@@ -547,8 +600,15 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
         const assistantMessage: Message = {
           role: 'assistant',
           content: fullContent + (fullContent ? ' [已中断]' : ''),
-          reasoning_content: fullReasoning || undefined
+          reasoning_content: fullReasoning || undefined,
+          images: [] // 初始化为空数组
         };
+        
+        // 将tempMsgId中的图片添加到消息中
+        const currentTempImages = images[tempMsgId] || [];
+        if (currentTempImages.length > 0) {
+          assistantMessage.images = [...currentTempImages];
+        }
         
         const finalMessages = [...updatedMessages, assistantMessage];
         setCurrentConversation(prev => ({
@@ -724,14 +784,42 @@ const Chat: React.FC<ChatProps> = ({ isDarkMode, toggleTheme }) => {
                     {messageImages.map((imgData: string, imgIndex: number) => {
                       // 判断是URL还是base64数据
                       const isUrl = imgData.startsWith('http');
+                      
+                      // 获取此图片的来源路径（如果有）
+                      const imgSourcePath = messageSources?.[imgIndex];
+                      const imgToolName = messageToolNames?.[imgIndex];
+                      
                       return (
-                        <Image 
-                          key={imgIndex}
-                          src={isUrl ? imgData : `data:image/png;base64,${imgData}`}
-                          alt={`工具生成的图像 ${imgIndex+1}`}
-                          style={{ maxWidth: '100%', borderRadius: '4px' }}
-                          preview={{ mask: <div>查看大图</div> }}
-                        />
+                        <div key={imgIndex} style={{ position: 'relative', maxWidth: '100%' }}>
+                          <Image 
+                            src={isUrl ? imgData : `data:image/png;base64,${imgData}`}
+                            alt={`工具生成的图像 ${imgIndex+1}`}
+                            style={{ maxWidth: '100%', borderRadius: '4px' }}
+                            preview={{ 
+                              mask: <div>查看大图</div>,
+                              // 使用title属性显示工具名和路径
+                              title: imgSourcePath || imgToolName ? 
+                                `${imgToolName ? `工具: ${imgToolName}` : ''}${imgSourcePath ? ` 路径: ${imgSourcePath}` : ''}` : 
+                                undefined
+                            }}
+                          />
+                          {(imgToolName || imgSourcePath) && (
+                            <div style={{ 
+                              fontSize: '12px', 
+                              color: '#888', 
+                              marginTop: '4px',
+                              textOverflow: 'ellipsis',
+                              overflow: 'hidden',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '100%'
+                            }}>
+                              {imgToolName && <span>工具: {imgToolName}</span>}
+                              {imgSourcePath && <Tooltip title={imgSourcePath}>
+                                <span> 源文件: {String(imgSourcePath)}</span>
+                              </Tooltip>}
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>

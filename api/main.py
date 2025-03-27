@@ -608,7 +608,7 @@ async def create_conversation():
         "messages": [
             {
                 "role": "system",
-                "content": "欢迎讨论太阳能电池相关的问题"
+                "content": "欢迎讨论太阳能电池相关的问题，回答时除非用户指定语言，否则尽量使用中文进行回答。"
             }
         ]
     }

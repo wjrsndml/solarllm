@@ -4,6 +4,8 @@ export interface Message {
   reasoning_content?: string;
   context_info?: ContextInfo[];
   images?: string[];  // 用于存储图片的URL或base64数据
+  imageSources?: string[];  // 图像的来源路径
+  imageToolNames?: string[];  // 生成图像的工具名称
 }
 
 export interface ContextInfo {
@@ -41,4 +43,5 @@ export interface ImageContent {
   image_data: string;  // base64编码的图像数据
   image_index: number;
   format: string;
+  source_path?: string;  // 图像来源的文件路径
 } 
