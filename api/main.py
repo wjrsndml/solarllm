@@ -366,7 +366,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                         if mcp_client.session:
                             try:
                                 result = await mcp_client.call_tool(tool_name, arguments)
-                                
+                                logger.info(f"工具 {tool_name} 返回结果: {result}")
                                 # 处理结果内容
                                 result_content = ""
                                 
@@ -387,35 +387,122 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                     # 其他情况尝试JSON序列化
                                     result_content = json.dumps(result.content) if not isinstance(result.content, str) else str(result.content)
                                 
-                                # 记录工具返回结果的类型，便于调试
-                                logger.info(f"工具 {tool_name} 返回结果类型: {type(result.content).__name__}")
-                                
-                                # 检查是否有图像结果
-                                has_images = hasattr(result.content, 'image') and len(result.content.image) > 0
-                                if has_images:
-                                    # 添加图像信息到结果
-                                    result_content += "\n(结果包含图像数据)"
-                                    
-                                    # 单独处理图像数据，发送给前端
-                                    for i, img in enumerate(result.content.image):
-                                        try:
-                                            # 转换为base64编码
-                                            img_base64 = base64.b64encode(img.data).decode('utf-8')
-                                            
-                                            # 发送图像数据，但不将其添加到消息历史中
-                                            image_data = {
-                                                'type': 'image', 
-                                                'content': {
-                                                    'tool_name': tool_name,
-                                                    'image_data': img_base64,
-                                                    'image_index': i,
-                                                    'format': img.format if hasattr(img, 'format') else 'png'
-                                                }
-                                            }
-                                            yield f"data: {json.dumps(image_data)}\n\n"
-                                            logger.info(f"发送工具 {tool_name} 的图像数据 #{i}")
-                                        except Exception as e:
-                                            logger.info(f"处理图像数据时出错: {str(e)}")
+                                # 检查结果是否包含图像数据
+                                try:
+                                    # 解析工具返回的文本内容
+                                    if isinstance(result.content, list) and len(result.content) > 0:
+                                        content_item = result.content[0]
+                                        if hasattr(content_item, 'text') and content_item.text:
+                                            # 尝试解析文本内容中的JSON字符串
+                                            import ast
+                                            try:
+                                                logger.info(f"解析工具返回内容: {content_item.text}...")
+                                                try:
+                                                    content_dict = json.loads(content_item.text)
+                                                except json.JSONDecodeError:
+                                                    # 如果JSON解析失败，尝试使用ast.literal_eval
+                                                    content_dict = ast.literal_eval(content_item.text)
+                                                
+                                                # 检测是否包含file_path属性
+                                                has_file_paths = False
+                                                file_paths = []
+                                                
+                                                # 确定文件路径列表
+                                                if 'file_path' in content_dict and content_dict['file_path']:
+                                                    has_file_paths = True
+                                                    if isinstance(content_dict['file_path'], str):
+                                                        # 单个文件路径
+                                                        file_paths = [content_dict['file_path']]
+                                                    elif isinstance(content_dict['file_path'], list):
+                                                        # 文件路径列表
+                                                        file_paths = content_dict['file_path']
+                                                # 检查文本字段中是否包含file_path
+                                                elif 'text' in content_dict and isinstance(content_dict['text'], dict):
+                                                    if 'file_path' in content_dict['text'] and content_dict['text']['file_path']:
+                                                        has_file_paths = True
+                                                        if isinstance(content_dict['text']['file_path'], str):
+                                                            file_paths = [content_dict['text']['file_path']]
+                                                        elif isinstance(content_dict['text']['file_path'], list):
+                                                            file_paths = content_dict['text']['file_path']
+                                                            
+                                                if has_file_paths and file_paths:
+                                                    # 添加图像信息到结果
+                                                    result_content += f"\n(结果包含{len(file_paths)}个图像文件)"
+                                                    
+                                                    # 发送每个图像文件
+                                                    for i, file_path in enumerate(file_paths):
+                                                        try:
+                                                            # 确认文件存在
+                                                            if os.path.exists(file_path):
+                                                                # 读取图像文件
+                                                                with open(file_path, 'rb') as img_file:
+                                                                    img_data = img_file.read()
+                                                                
+                                                                # 确定图像格式（从文件扩展名）
+                                                                img_format = os.path.splitext(file_path)[1].lstrip('.')
+                                                                if not img_format:
+                                                                    img_format = 'png'  # 默认格式
+                                                                
+                                                                # 转换为base64编码
+                                                                img_base64 = base64.b64encode(img_data).decode('utf-8')
+                                                                
+                                                                # 发送图像数据
+                                                                image_data = {
+                                                                    'type': 'image', 
+                                                                    'content': {
+                                                                        'tool_name': tool_name,
+                                                                        'image_data': img_base64,
+                                                                        'image_index': i,
+                                                                        'format': img_format,
+                                                                        'source_path': file_path
+                                                                    }
+                                                                }
+                                                                yield f"data: {json.dumps(image_data)}\n\n"
+                                                                logger.info(f"发送工具 {tool_name} 的图像数据 #{i}，文件路径: {file_path}")
+                                                            else:
+                                                                logger.info(f"图像文件不存在: {file_path}")
+                                                        except Exception as e:
+                                                            logger.info(f"处理图像文件时出错: {str(e)}")
+                                                
+                                                # 如果同时还有image字段，也处理它
+                                                has_images = 'image' in content_dict and isinstance(content_dict['image'], list) and len(content_dict['image']) > 0
+                                                if has_images:
+                                                    # 添加图像信息到结果（如果还没有添加）
+                                                    if not has_file_paths:
+                                                        result_content += "\n(结果包含图像数据)"
+                                                    
+                                                    # 单独处理图像数据对象，发送给前端
+                                                    start_index = len(file_paths)  # 从file_paths之后的索引开始
+                                                    for i, img in enumerate(content_dict['image']):
+                                                        try:
+                                                            # 获取图像数据
+                                                            if hasattr(img, 'data') and img.data:
+                                                                # 转换为base64编码
+                                                                img_base64 = base64.b64encode(img.data).decode('utf-8')
+                                                                
+                                                                # 确定图像格式
+                                                                img_format = 'png'
+                                                                if hasattr(img, 'format') and img.format:
+                                                                    img_format = img.format
+                                                                
+                                                                # 发送图像数据，但不将其添加到消息历史中
+                                                                image_data = {
+                                                                    'type': 'image', 
+                                                                    'content': {
+                                                                        'tool_name': tool_name,
+                                                                        'image_data': img_base64,
+                                                                        'image_index': i + start_index,
+                                                                        'format': img_format
+                                                                    }
+                                                                }
+                                                                yield f"data: {json.dumps(image_data)}\n\n"
+                                                                logger.info(f"发送工具 {tool_name} 的图像对象数据 #{i + start_index}")
+                                                        except Exception as e:
+                                                            logger.info(f"处理图像对象数据时出错: {str(e)}")
+                                            except Exception as e:
+                                                logger.info(f"解析工具返回内容时出错: {str(e)}")
+                                except Exception as e:
+                                    logger.info(f"处理工具返回结果时出错: {str(e)}")
                                 
                                 # 将工具调用结果添加到历史记录中
                                 openai_messages.append({

@@ -148,7 +148,7 @@ async def draw_curve(
     
     # 返回结果
     result = {
-        "image": [curve_image]
+        
     }
     result["text"] = {}
     result["text"]["file_path"] = file_path
@@ -252,7 +252,7 @@ async def draw_table(
     
     # 返回结果
     result = {
-        "image": [table_image]
+        
     }
     result["text"] = {}
     result["text"]["file_path"] = file_path
@@ -385,7 +385,7 @@ async def simulate_solar_cell(
     
     # 返回结果字典和JV曲线图像
     result = {
-        "image": [jv_curve_image]
+        
     }
     result["text"] = {}
     result["text"]["parameters"] = predictions
@@ -580,12 +580,12 @@ async def batch_simulate_solar_cell(
         ctx.info("Batch simulation completed!")
     
     result = {
-        "image": [trends_image, jv_curves_image]
     }
     result["text"] = {}
     result["text"]["param_name"] = param_name
     result["text"]["param_values"] = param_values.tolist()
     result["text"]["results_table"] = results_df.to_dict()
+    result["text"]["file_path"] = [trends_file, jv_file]
     result["text"]["trends_file"] = trends_file
     result["text"]["jv_file"] = jv_file
     
