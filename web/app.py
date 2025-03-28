@@ -7,6 +7,7 @@ import base64
 from PIL import Image
 import io
 import logging
+import numpy as np
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -379,6 +380,69 @@ def debounced_predict(fn, delay_ms=500):
     
     return debounced
 
+# 太阳能电池老化预测功能
+def load_default_aging_params():
+    try:
+        response = requests.get(f"{API_BASE_URL}/aging/default-params")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {}
+    except Exception as e:
+        print(f"加载默认老化参数出错: {str(e)}")
+        return {}
+
+def predict_aging_curve(params_dict):
+    try:
+        # 发送请求到后端API
+        response = requests.post(f"{API_BASE_URL}/aging/predict", json=params_dict)
+        if response.status_code == 200:
+            data = response.json()
+            
+            # 处理预测结果
+            curve_data = data["curve_data"]
+            x_values = curve_data["x_values"]
+            y_values = curve_data["y_values"]
+            file_path = curve_data["file_path"]
+            
+            # 构建结果文本
+            result_text = f"老化曲线预测结果:\n"
+            result_text += f"初始PCE值: {y_values[0]:.4f}\n"
+            result_text += f"最终PCE值: {y_values[-1]:.4f}\n"
+            result_text += f"PCE下降比例: {(1 - y_values[-1]/y_values[0])*100:.2f}%\n"
+            
+            # 处理图像
+            if "curve_image" in data:
+                # 如果是base64数据
+                curve_image_base64 = data["curve_image"]
+                image_bytes = base64.b64decode(curve_image_base64)
+                image = Image.open(io.BytesIO(image_bytes))
+                return result_text, image
+            elif "image_url" in data:
+                # 如果是图像URL
+                image_url = data["image_url"]
+                full_url = f"{API_BASE_URL.replace('/api', '')}{image_url}"
+                # 直接返回URL，gradio.Image组件可以接受URL
+                return result_text, full_url
+            else:
+                return result_text, None
+        else:
+            return f"预测失败: {response.text}", None
+    except Exception as e:
+        return f"预测出错: {str(e)}", None
+
+def update_aging_params(*args):
+    # 将所有参数组合成字典
+    param_names = aging_param_names
+    params_dict = dict(zip(param_names, args))
+    return params_dict
+
+# 为科学计数法滑块生成显示器更新函数
+def generate_sci_display_updater(unit):
+    def update_display(value):
+        return f"当前值: {value:.2e} {unit}"
+    return update_display
+
 # 创建Gradio界面
 with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 太阳能电池AI助手")
@@ -570,6 +634,217 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
             predict_with_status,
             input_params,
             [result_text, jv_curve],
+            queue=True,
+            show_progress=False  # 不显示进度条，避免界面闪烁
+        )
+
+    with gr.Tab("太阳能电池老化预测"):
+        # 加载默认参数
+        default_aging_params = load_default_aging_params()
+        
+        with gr.Row():
+            with gr.Column(scale=2):
+                aging_curve = gr.Image(label="老化曲线", height=350)
+            with gr.Column(scale=1):
+                aging_result_text = gr.Textbox(label="预测结果", lines=10)
+                aging_loading_indicator = gr.Markdown("_老化预测状态: 就绪_")
+        
+        # 定义参数名列表，用于映射到API
+        aging_param_names = [
+            'Cell_architecture', 'Substrate_stack_sequence', 'Substrate_thickness',
+            'ETL_stack_sequence', 'ETL_thickness', 'ETL_additives_compounds',
+            'ETL_deposition_procedure', 'ETL_deposition_synthesis_atmosphere',
+            'ETL_deposition_solvents', 'ETL_deposition_substrate_temperature',
+            'ETL_deposition_thermal_annealing_temperature', 'ETL_deposition_thermal_annealing_time',
+            'ETL_deposition_thermal_annealing_atmosphere', 'ETL_storage_atmosphere',
+            'Perovskite_dimension_0D', 'Perovskite_dimension_2D', 'Perovskite_dimension_2D3D_mixture',
+            'Perovskite_dimension_3D', 'Perovskite_dimension_3D_with_2D_capping_layer',
+            'Perovskite_composition_a_ions', 'Perovskite_composition_a_ions_coefficients',
+            'Perovskite_composition_b_ions', 'Perovskite_composition_b_ions_coefficients',
+            'Perovskite_composition_c_ions', 'Perovskite_composition_c_ions_coefficients',
+            'Perovskite_composition_inorganic', 'Perovskite_composition_leadfree',
+            'Perovskite_additives_compounds', 'Perovskite_thickness', 'Perovskite_band_gap',
+            'Perovskite_pl_max', 'Perovskite_deposition_number_of_deposition_steps',
+            'Perovskite_deposition_procedure', 'Perovskite_deposition_aggregation_state_of_reactants',
+            'Perovskite_deposition_synthesis_atmosphere', 'Perovskite_deposition_solvents',
+            'Perovskite_deposition_substrate_temperature', 'Perovskite_deposition_quenching_induced_crystallisation',
+            'Perovskite_deposition_quenching_media', 'Perovskite_deposition_quenching_media_volume',
+            'Perovskite_deposition_thermal_annealing_temperature', 'Perovskite_deposition_thermal_annealing_time',
+            'Perovskite_deposition_thermal_annealing_atmosphere', 'Perovskite_deposition_solvent_annealing',
+            'HTL_stack_sequence', 'HTL_thickness_list', 'HTL_additives_compounds',
+            'HTL_deposition_procedure', 'HTL_deposition_aggregation_state_of_reactants',
+            'HTL_deposition_synthesis_atmosphere', 'HTL_deposition_solvents',
+            'HTL_deposition_thermal_annealing_temperature', 'HTL_deposition_thermal_annealing_time',
+            'HTL_deposition_thermal_annealing_atmosphere', 'Backcontact_stack_sequence',
+            'Backcontact_thickness_list', 'Backcontact_deposition_procedure',
+            'Encapsulation', 'Encapsulation_stack_sequence', 'Encapsulation_edge_sealing_materials',
+            'Encapsulation_atmosphere_for_encapsulation', 'JV_default_Voc', 'JV_default_Jsc',
+            'JV_default_FF', 'JV_default_PCE', 'Stability_protocol',
+            'Stability_average_over_n_number_of_cells', 'Stability_light_intensity',
+            'Stability_light_spectra', 'Stability_light_UV_filter',
+            'Stability_potential_bias_load_condition', 'Stability_PCE_burn_in_observed',
+            'Stability_light_source_type', 'Stability_temperature_range',
+            'Stability_atmosphere', 'Stability_relative_humidity_average_value'
+        ]
+        
+        # 创建参数控件列表
+        aging_param_controls = []
+        aging_param_displays = {}  # 存储科学计数法显示器
+        
+        # 参数分组
+        param_groups = {
+            "电池结构参数": [
+                ('Cell_architecture', '电池结构', 1, 1, 10, 1),
+                ('Substrate_stack_sequence', '基板堆叠序列', 10, 1, 50, 1),
+                ('Substrate_thickness', '基板厚度 (μm)', 14, 1, 100, 1),
+            ],
+            "ETL参数": [
+                ('ETL_stack_sequence', 'ETL堆叠序列', 39, 1, 100, 1),
+                ('ETL_thickness', 'ETL厚度 (nm)', 78, 1, 200, 1),
+                ('ETL_additives_compounds', 'ETL添加剂化合物', 27, 0, 100, 1),
+                ('ETL_deposition_procedure', 'ETL沉积程序', 28, 1, 50, 1),
+                ('ETL_deposition_synthesis_atmosphere', 'ETL沉积合成气氛', 12, 1, 20, 1),
+                ('ETL_deposition_solvents', 'ETL沉积溶剂', 18, 1, 50, 1),
+                ('ETL_deposition_substrate_temperature', 'ETL沉积基板温度 (°C)', 8, 0, 50, 1),
+                ('ETL_deposition_thermal_annealing_temperature', 'ETL沉积热退火温度 (°C)', 27, 0, 100, 1),
+                ('ETL_deposition_thermal_annealing_time', 'ETL沉积热退火时间 (min)', 19, 0, 120, 1),
+                ('ETL_deposition_thermal_annealing_atmosphere', 'ETL沉积热退火气氛', 10, 1, 20, 1),
+                ('ETL_storage_atmosphere', 'ETL储存气氛', 2, 1, 10, 1),
+            ],
+            "钙钛矿维度参数": [
+                ('Perovskite_dimension_0D', '钙钛矿维度0D', 0, 0, 1, 1),
+                ('Perovskite_dimension_2D', '钙钛矿维度2D', 0, 0, 1, 1),
+                ('Perovskite_dimension_2D3D_mixture', '钙钛矿维度2D3D混合', 0, 0, 1, 1),
+                ('Perovskite_dimension_3D', '钙钛矿维度3D', 1, 0, 1, 1),
+                ('Perovskite_dimension_3D_with_2D_capping_layer', '带2D覆盖层的钙钛矿维度3D', 0, 0, 1, 1),
+            ],
+            "钙钛矿成分参数": [
+                ('Perovskite_composition_a_ions', '钙钛矿成分A离子', 27, 1, 50, 1),
+                ('Perovskite_composition_a_ions_coefficients', '钙钛矿成分A离子系数', 16, 1, 50, 1),
+                ('Perovskite_composition_b_ions', '钙钛矿成分B离子', 7, 1, 20, 1),
+                ('Perovskite_composition_b_ions_coefficients', '钙钛矿成分B离子系数', 7, 1, 20, 1),
+                ('Perovskite_composition_c_ions', '钙钛矿成分C离子', 2, 1, 10, 1),
+                ('Perovskite_composition_c_ions_coefficients', '钙钛矿成分C离子系数', 35, 1, 100, 1),
+                ('Perovskite_composition_inorganic', '钙钛矿成分无机', 0, 0, 1, 1),
+                ('Perovskite_composition_leadfree', '钙钛矿成分无铅', 0, 0, 1, 1),
+            ],
+            "钙钛矿物理参数": [
+                ('Perovskite_additives_compounds', '钙钛矿添加剂化合物', 121, 0, 200, 1),
+                ('Perovskite_thickness', '钙钛矿厚度 (nm)', 320, 100, 1000, 10),
+                ('Perovskite_band_gap', '钙钛矿带隙 (eV)', 1.6, 1.0, 3.0, 0.1),
+                ('Perovskite_pl_max', '钙钛矿PL最大值 (nm)', 770, 600, 900, 5),
+            ],
+            "钙钛矿沉积参数": [
+                ('Perovskite_deposition_number_of_deposition_steps', '钙钛矿沉积步骤数', 1, 1, 5, 1),
+                ('Perovskite_deposition_procedure', '钙钛矿沉积程序', 12, 1, 30, 1),
+                ('Perovskite_deposition_aggregation_state_of_reactants', '钙钛矿沉积反应物聚集状态', 4, 1, 10, 1),
+                ('Perovskite_deposition_synthesis_atmosphere', '钙钛矿沉积合成气氛', 13, 1, 20, 1),
+                ('Perovskite_deposition_solvents', '钙钛矿沉积溶剂', 35, 1, 50, 1),
+                ('Perovskite_deposition_substrate_temperature', '钙钛矿沉积基板温度 (°C)', 5, 0, 100, 1),
+                ('Perovskite_deposition_quenching_induced_crystallisation', '钙钛矿沉积淬火诱导结晶', 1, 0, 1, 1),
+                ('Perovskite_deposition_quenching_media', '钙钛矿沉积淬火介质', 19, 1, 50, 1),
+                ('Perovskite_deposition_quenching_media_volume', '钙钛矿沉积淬火介质体积 (mL)', 9, 1, 50, 1),
+                ('Perovskite_deposition_thermal_annealing_temperature', '钙钛矿沉积热退火温度 (°C)', 0, 0, 200, 5),
+                ('Perovskite_deposition_thermal_annealing_time', '钙钛矿沉积热退火时间 (min)', 21, 0, 120, 1),
+                ('Perovskite_deposition_thermal_annealing_atmosphere', '钙钛矿沉积热退火气氛', 7, 1, 20, 1),
+                ('Perovskite_deposition_solvent_annealing', '钙钛矿沉积溶剂退火', 0, 0, 1, 1),
+            ],
+            "HTL参数": [
+                ('HTL_stack_sequence', 'HTL堆叠序列', 115, 1, 200, 1),
+                ('HTL_thickness_list', 'HTL厚度 (nm)', 40, 10, 200, 1),
+                ('HTL_additives_compounds', 'HTL添加剂化合物', 50, 0, 100, 1),
+                ('HTL_deposition_procedure', 'HTL沉积程序', 16, 1, 30, 1),
+                ('HTL_deposition_aggregation_state_of_reactants', 'HTL沉积反应物聚集状态', 4, 1, 10, 1),
+                ('HTL_deposition_synthesis_atmosphere', 'HTL沉积合成气氛', 8, 1, 20, 1),
+                ('HTL_deposition_solvents', 'HTL沉积溶剂', 8, 1, 30, 1),
+                ('HTL_deposition_thermal_annealing_temperature', 'HTL沉积热退火温度 (°C)', 13, 0, 200, 5),
+                ('HTL_deposition_thermal_annealing_time', 'HTL沉积热退火时间 (min)', 9, 0, 120, 1),
+                ('HTL_deposition_thermal_annealing_atmosphere', 'HTL沉积热退火气氛', 8, 1, 20, 1),
+            ],
+            "背接触参数": [
+                ('Backcontact_stack_sequence', '背接触堆叠序列', 2, 1, 10, 1),
+                ('Backcontact_thickness_list', '背接触厚度 (nm)', 150, 50, 500, 10),
+                ('Backcontact_deposition_procedure', '背接触沉积程序', 3, 1, 10, 1),
+            ],
+            "封装参数": [
+                ('Encapsulation', '封装', 0, 0, 1, 1),
+                ('Encapsulation_stack_sequence', '封装堆叠序列', 19, 1, 50, 1),
+                ('Encapsulation_edge_sealing_materials', '封装边缘密封材料', 6, 1, 20, 1),
+                ('Encapsulation_atmosphere_for_encapsulation', '封装气氛', 4, 1, 10, 1),
+            ],
+            "JV默认参数": [
+                ('JV_default_Voc', 'JV默认开路电压 (V)', 0.82, 0.3, 2.0, 0.01),
+                ('JV_default_Jsc', 'JV默认短路电流 (mA/cm²)', 20.98, 10.0, 30.0, 0.1),
+                ('JV_default_FF', 'JV默认填充因子', 0.71, 0.3, 0.9, 0.01),
+                ('JV_default_PCE', 'JV默认光电转换效率 (%)', 12.29, 5.0, 25.0, 0.1),
+            ],
+            "稳定性参数": [
+                ('Stability_protocol', '稳定性协议', 1, 1, 10, 1),
+                ('Stability_average_over_n_number_of_cells', '稳定性平均电池数量', 1, 1, 10, 1),
+                ('Stability_light_intensity', '稳定性光强度', 0, 0, 10, 1),
+                ('Stability_light_spectra', '稳定性光谱', 3, 1, 10, 1),
+                ('Stability_light_UV_filter', '稳定性UV滤光片', 0, 0, 1, 1),
+                ('Stability_potential_bias_load_condition', '稳定性电位偏置负载条件', 2, 1, 10, 1),
+                ('Stability_PCE_burn_in_observed', '稳定性PCE老化观察', 0, 0, 1, 1),
+                ('Stability_light_source_type', '稳定性光源类型', 0, 0, 5, 1),
+                ('Stability_temperature_range', '稳定性温度范围 (°C)', 25, 0, 100, 1),
+                ('Stability_atmosphere', '稳定性气氛', 4, 1, 10, 1),
+                ('Stability_relative_humidity_average_value', '稳定性相对湿度平均值 (%)', 0, 0, 100, 1),
+            ],
+        }
+        
+        # 使用手风琴组件分组显示参数
+        with gr.Accordion("参数设置", open=True):
+            for group_name, params in param_groups.items():
+                with gr.Accordion(group_name, open=False):
+                    for param_info in params:
+                        param_name, param_label, default_val, min_val, max_val, step = param_info
+                        default_val = default_aging_params.get(param_name, default_val)
+                        
+                        # 创建滑块控件
+                        param_control = gr.Slider(
+                            minimum=min_val, 
+                            maximum=max_val, 
+                            value=default_val, 
+                            step=step,
+                            label=param_label, 
+                            info=param_name
+                        )
+                        aging_param_controls.append(param_control)
+                        
+        # 计算按钮
+        predict_btn = gr.Button("进行老化预测", variant="primary")
+        
+        # 创建预测函数
+        def predict_with_aging_status(*args):
+            aging_loading_indicator.value = "_老化预测状态: 计算中..._"
+            try:
+                # 更新所有参数
+                params_dict = update_aging_params(*args)
+                
+                # 计算新结果
+                new_result_text, new_aging_curve = predict_aging_curve(params_dict)
+                
+                # 计算完成后更新UI
+                aging_loading_indicator.value = "_老化预测状态: 完成_"
+                return new_result_text, new_aging_curve
+            except Exception as e:
+                aging_loading_indicator.value = "_老化预测状态: 出错_"
+                return f"预测出错: {str(e)}", None
+        
+        # 绑定计算按钮事件
+        predict_btn.click(
+            predict_with_aging_status,
+            aging_param_controls,
+            [aging_result_text, aging_curve],
+            queue=True
+        )
+        
+        # 页面加载完成后自动执行第一次仿真
+        demo.load(
+            predict_with_aging_status,
+            aging_param_controls,
+            [aging_result_text, aging_curve],
             queue=True,
             show_progress=False  # 不显示进度条，避免界面闪烁
         )

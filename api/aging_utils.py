@@ -183,7 +183,7 @@ def predict_aging_curve(params_dict):
     # 获取模型和转换器的路径
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_dir = os.path.dirname(current_dir)
-    model_path = os.path.join(project_dir, 'test/quxian_high500.pth')
+    model_path = os.path.join(project_dir, 'api/quxian_high500.pth')
     
     # 加载训练好的模型
     try:
@@ -196,7 +196,7 @@ def predict_aging_curve(params_dict):
     
     # 加载训练数据以获取归一化参数
     try:
-        data_path = os.path.join(project_dir, 'test/quxian_shiyan.xlsx')
+        data_path = os.path.join(project_dir, 'api/quxian_shiyan.xlsx')
         data = pd.read_excel(data_path, sheet_name='>500', header=None)
         feature = data.iloc[:, :76]
         target = data.iloc[:, 76:]
@@ -251,9 +251,9 @@ def plot_prediction_curve(predicted_curve):
     
     fig = plt.figure(figsize=(10, 6))
     plt.plot(x_coords, y_coords, 'r-', linewidth=2.5)
-    plt.xlabel('时间')
+    plt.xlabel('Time')
     plt.ylabel('PCE%')
-    plt.title('太阳能电池老化曲线预测')
+    plt.title('Prediction of solar cell aging curve')
     plt.ylim(0, 1.2)  # 设置y轴范围
     plt.grid(True)
     

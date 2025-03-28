@@ -29,6 +29,58 @@ logger = logging.getLogger(__name__)
 from contextlib import AsyncExitStack
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+import torch
+import torch.nn as nn
+
+class CurvePredictor(nn.Module):
+    def __init__(self, input_size, hidden_sizes, output_size, activation, l1_lambda, l2_lambda):
+        super(CurvePredictor, self).__init__()
+        self.layers = nn.ModuleList()
+        self.l1_lambda = l1_lambda
+        self.l2_lambda = l2_lambda
+
+        # 输入层到第一个隐藏层
+        self.layers.append(nn.Linear(input_size, hidden_sizes[0]))
+        self.layers.append(get_activation(activation))
+
+        # 隐藏层
+        for i in range(len(hidden_sizes) - 1):
+            self.layers.append(nn.Linear(hidden_sizes[i], hidden_sizes[i+1]))
+            self.layers.append(get_activation(activation))
+
+        # 最后一个隐藏层到输出层
+        self.layers.append(nn.Linear(hidden_sizes[-1], output_size))
+
+    def forward(self, x):
+        out = x
+        for layer in self.layers:
+            out = layer(out)
+        return out
+
+    def l1_loss(self):
+        l1_reg = torch.tensor(0.0, dtype=torch.float32)
+        for param in self.parameters():
+            l1_reg += torch.norm(param, 1)  # 使用L1范数计算正则化项
+        return self.l1_lambda * l1_reg
+
+    def l2_loss(self):
+        l2_reg = torch.tensor(0.0, dtype=torch.float32)
+        for param in self.parameters():
+            l2_reg += torch.norm(param, 2)
+        return self.l2_lambda * l2_reg
+
+def get_activation(activation):
+    if activation == 'relu':
+        return nn.ReLU()
+    elif activation == 'tanh':
+        return nn.Tanh()
+    elif activation == 'sigmoid':
+        return nn.Sigmoid()
+    else:
+        raise ValueError(f"Invalid activation function: {activation}")
+
+
+
 
 # 加载环境变量
 load_dotenv()
