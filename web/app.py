@@ -147,10 +147,13 @@ def send_message(message, chatbot):
             elif event_type == "image":
                 # 处理图像信息
                 image_info.append(content)
-                image_path = content.get("url_path", "")
-                if image_path:
+                # 从content中获取图像URL路径
+                url_path = content.get("url_path", "")
+                if url_path:
+                    # 构建完整的图像URL
+                    full_url = f"{API_BASE_URL.replace('/api', '')}{url_path}"
                     # 在回复中添加图像引用
-                    img_ref = f"\n\n![图像 {len(image_info)}]({image_path})"
+                    img_ref = f"\n\n![图像 {len(image_info)}]({full_url})"
                     assistant_response += img_ref
                     chatbot[-1][1] = assistant_response
                     yield chatbot, ""
@@ -251,15 +254,53 @@ def predict_solar_params(Si_thk, t_SiO2, t_polySi_rear_P, front_junc, rear_junc,
                 result_text += f"{key}: {value}\n"
             
             # 处理JV曲线图像
-            jv_curve_base64 = data["jv_curve"]
-            image_bytes = base64.b64decode(jv_curve_base64)
-            image = Image.open(io.BytesIO(image_bytes))
-            
-            return result_text, image
+            if "jv_curve" in data:
+                # 如果是base64数据
+                jv_curve_base64 = data["jv_curve"]
+                image_bytes = base64.b64decode(jv_curve_base64)
+                image = Image.open(io.BytesIO(image_bytes))
+                return result_text, image
+            elif "image_url" in data:
+                # 如果是图像URL
+                image_url = data["image_url"]
+                full_url = f"{API_BASE_URL.replace('/api', '')}{image_url}"
+                # 直接返回URL，gradio.Image组件可以接受URL
+                return result_text, full_url
+            else:
+                return result_text, None
         else:
             return f"预测失败: {response.text}", None
     except Exception as e:
         return f"预测出错: {str(e)}", None
+
+# 添加防抖功能，避免频繁请求
+def debounced_predict(fn, delay_ms=500):
+    """创建一个防抖版本的预测函数"""
+    last_call_time = [0]
+    is_computing = [False]  # 标记是否正在计算
+    
+    def debounced(*args):
+        nonlocal last_call_time
+        current_time = datetime.now().timestamp() * 1000
+        time_since_last_call = current_time - last_call_time[0]
+        
+        # 如果正在计算或者未达到延迟时间，则不执行新的计算
+        if is_computing[0] or time_since_last_call < delay_ms:
+            return None, None  # 返回None，Gradio会忽略这个返回值，保持UI不变
+        
+        # 设置计算标志
+        is_computing[0] = True
+        
+        try:
+            # 执行实际计算
+            last_call_time[0] = current_time
+            result = fn(*args)
+            return result
+        finally:
+            # 无论成功与否，都重置计算标志
+            is_computing[0] = False
+    
+    return debounced
 
 # 创建Gradio界面
 with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
@@ -324,43 +365,134 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
         default_params = load_default_solar_params()
         
         with gr.Row():
+            with gr.Column(scale=2):
+                jv_curve = gr.Image(label="JV曲线", height=350)
+            with gr.Column(scale=1):
+                result_text = gr.Textbox(label="预测结果", lines=10)
+                loading_indicator = gr.Markdown("_仿真状态: 就绪_")
+        
+        with gr.Row():
             with gr.Column():
-                gr.Markdown("## 输入参数")
+                gr.Markdown("## 输入参数 (拖动滑块自动更新仿真结果)")
                 
-                Si_thk = gr.Number(value=default_params.get('Si_thk', 180), label="Si 厚度 (μm)")
-                t_SiO2 = gr.Number(value=default_params.get('t_SiO2', 1.4), label="SiO2 厚度 (nm)")
-                t_polySi_rear_P = gr.Number(value=default_params.get('t_polySi_rear_P', 100), label="后表面 PolySi 厚度 (nm)")
-                front_junc = gr.Number(value=default_params.get('front_junc', 0.5), label="前表面结深度 (μm)")
-                rear_junc = gr.Number(value=default_params.get('rear_junc', 0.5), label="后表面结深度 (μm)")
-                resist_rear = gr.Number(value=default_params.get('resist_rear', 100), label="后表面电阻 (Ω·cm)")
+                Si_thk = gr.Slider(minimum=100, maximum=300, value=default_params.get('Si_thk', 180), 
+                                  label="Si 厚度 (μm)", step=1)
+                t_SiO2 = gr.Slider(minimum=0.5, maximum=5, value=default_params.get('t_SiO2', 1.4), 
+                                  label="SiO2 厚度 (nm)", step=0.1)
+                t_polySi_rear_P = gr.Slider(minimum=50, maximum=200, value=default_params.get('t_polySi_rear_P', 100), 
+                                         label="后表面 PolySi 厚度 (nm)", step=1)
+                front_junc = gr.Slider(minimum=0.1, maximum=2, value=default_params.get('front_junc', 0.5), 
+                                     label="前表面结深度 (μm)", step=0.1)
+                rear_junc = gr.Slider(minimum=0.1, maximum=2, value=default_params.get('rear_junc', 0.5), 
+                                    label="后表面结深度 (μm)", step=0.1)
+                resist_rear = gr.Slider(minimum=10, maximum=500, value=default_params.get('resist_rear', 100), 
+                                      label="后表面电阻 (Ω·cm)", step=10)
                 
             with gr.Column():
                 gr.Markdown("## 掺杂与界面参数")
                 
-                Nd_top = gr.Number(value=default_params.get('Nd_top', 1e20), label="前表面掺杂浓度 (cm^-3)")
-                Nd_rear = gr.Number(value=default_params.get('Nd_rear', 1e20), label="后表面掺杂浓度 (cm^-3)")
-                Nt_polySi_top = gr.Number(value=default_params.get('Nt_polySi_top', 1e20), label="前表面 PolySi 掺杂浓度 (cm^-3)")
-                Nt_polySi_rear = gr.Number(value=default_params.get('Nt_polySi_rear', 1e20), label="后表面 PolySi 掺杂浓度 (cm^-3)")
-                Dit_Si_SiOx = gr.Number(value=default_params.get('Dit_Si_SiOx', 1e10), label="Si-SiOx 界面缺陷密度 (cm^-2)")
-                Dit_SiOx_Poly = gr.Number(value=default_params.get('Dit_SiOx_Poly', 1e10), label="SiOx-Poly 界面缺陷密度 (cm^-2)")
-                Dit_top = gr.Number(value=default_params.get('Dit_top', 1e10), label="顶部界面缺陷密度 (cm^-2)")
+                # 使用自定义格式显示科学计数法
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        Nd_top = gr.Slider(minimum=1e19, maximum=1e21, value=default_params.get('Nd_top', 1e20), 
+                                        label="前表面掺杂浓度 (cm^-3)", step=1e19, scale=0)
+                    with gr.Column(scale=1):
+                        Nd_top_display = gr.Markdown(f"当前值: {default_params.get('Nd_top', 1e20):.2e} cm^-3")
+                
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        Nd_rear = gr.Slider(minimum=1e19, maximum=1e21, value=default_params.get('Nd_rear', 1e20), 
+                                        label="后表面掺杂浓度 (cm^-3)", step=1e19, scale=0)
+                    with gr.Column(scale=1):
+                        Nd_rear_display = gr.Markdown(f"当前值: {default_params.get('Nd_rear', 1e20):.2e} cm^-3")
+                
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        Nt_polySi_top = gr.Slider(minimum=1e19, maximum=1e21, value=default_params.get('Nt_polySi_top', 1e20), 
+                                                label="前表面 PolySi 掺杂浓度 (cm^-3)", step=1e19, scale=0)
+                    with gr.Column(scale=1):
+                        Nt_polySi_top_display = gr.Markdown(f"当前值: {default_params.get('Nt_polySi_top', 1e20):.2e} cm^-3")
+                
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        Nt_polySi_rear = gr.Slider(minimum=1e19, maximum=1e21, value=default_params.get('Nt_polySi_rear', 1e20), 
+                                                label="后表面 PolySi 掺杂浓度 (cm^-3)", step=1e19, scale=0)
+                    with gr.Column(scale=1):
+                        Nt_polySi_rear_display = gr.Markdown(f"当前值: {default_params.get('Nt_polySi_rear', 1e20):.2e} cm^-3")
+                
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        Dit_Si_SiOx = gr.Slider(minimum=1e9, maximum=1e12, value=default_params.get('Dit_Si_SiOx', 1e10), 
+                                            label="Si-SiOx 界面缺陷密度 (cm^-2)", step=1e9, scale=0)
+                    with gr.Column(scale=1):
+                        Dit_Si_SiOx_display = gr.Markdown(f"当前值: {default_params.get('Dit_Si_SiOx', 1e10):.2e} cm^-2")
+                
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        Dit_SiOx_Poly = gr.Slider(minimum=1e9, maximum=1e12, value=default_params.get('Dit_SiOx_Poly', 1e10), 
+                                                label="SiOx-Poly 界面缺陷密度 (cm^-2)", step=1e9, scale=0)
+                    with gr.Column(scale=1):
+                        Dit_SiOx_Poly_display = gr.Markdown(f"当前值: {default_params.get('Dit_SiOx_Poly', 1e10):.2e} cm^-2")
+                
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        Dit_top = gr.Slider(minimum=1e9, maximum=1e12, value=default_params.get('Dit_top', 1e10), 
+                                        label="顶部界面缺陷密度 (cm^-2)", step=1e9, scale=0)
+                    with gr.Column(scale=1):
+                        Dit_top_display = gr.Markdown(f"当前值: {default_params.get('Dit_top', 1e10):.2e} cm^-2")
         
-        with gr.Row():
-            predict_btn = gr.Button("预测性能参数", variant="primary")
+        # 绑定参数变化自动预测
+        input_params = [Si_thk, t_SiO2, t_polySi_rear_P, front_junc, rear_junc, resist_rear, 
+                       Nd_top, Nd_rear, Nt_polySi_top, Nt_polySi_rear, Dit_Si_SiOx, 
+                       Dit_SiOx_Poly, Dit_top]
         
-        with gr.Row():
-            with gr.Column():
-                result_text = gr.Textbox(label="预测结果", lines=10)
-            with gr.Column():
-                jv_curve = gr.Image(label="JV曲线")
+        # 创建带加载状态的预测函数
+        def predict_with_status(*args):
+            loading_indicator.value = "_仿真状态: 计算中..._"
+            try:
+                # 计算新结果，但不立即更新UI
+                new_result_text, new_jv_curve = predict_solar_params(*args)
+                
+                # 计算完成后再一次性更新UI
+                loading_indicator.value = "_仿真状态: 完成_"
+                return new_result_text, new_jv_curve
+            except Exception as e:
+                loading_indicator.value = "_仿真状态: 出错_"
+                return f"预测出错: {str(e)}", None
         
-        # 绑定预测事件
-        predict_btn.click(
-            predict_solar_params, 
-            [Si_thk, t_SiO2, t_polySi_rear_P, front_junc, rear_junc, resist_rear, 
-             Nd_top, Nd_rear, Nt_polySi_top, Nt_polySi_rear, Dit_Si_SiOx, 
-             Dit_SiOx_Poly, Dit_top],
-            [result_text, jv_curve]
+        # 创建防抖版本的预测函数
+        debounced_predict_fn = debounced_predict(predict_with_status, delay_ms=500)
+        
+        # 更新科学计数法显示
+        def update_display(value):
+            return f"当前值: {value:.2e}"
+        
+        # 绑定科学计数法显示更新
+        Nd_top.change(lambda x: f"当前值: {x:.2e} cm^-3", Nd_top, Nd_top_display)
+        Nd_rear.change(lambda x: f"当前值: {x:.2e} cm^-3", Nd_rear, Nd_rear_display)
+        Nt_polySi_top.change(lambda x: f"当前值: {x:.2e} cm^-3", Nt_polySi_top, Nt_polySi_top_display)
+        Nt_polySi_rear.change(lambda x: f"当前值: {x:.2e} cm^-3", Nt_polySi_rear, Nt_polySi_rear_display)
+        Dit_Si_SiOx.change(lambda x: f"当前值: {x:.2e} cm^-2", Dit_Si_SiOx, Dit_Si_SiOx_display)
+        Dit_SiOx_Poly.change(lambda x: f"当前值: {x:.2e} cm^-2", Dit_SiOx_Poly, Dit_SiOx_Poly_display)
+        Dit_top.change(lambda x: f"当前值: {x:.2e} cm^-2", Dit_top, Dit_top_display)
+        
+        # 为每个滑块添加自动更新事件（带防抖）
+        for param in input_params:
+            param.change(
+                debounced_predict_fn, 
+                input_params,
+                [result_text, jv_curve],
+                queue=True,
+                show_progress=False  # 不显示进度条，避免界面闪烁
+            )
+            
+        # 页面加载完成后自动执行第一次仿真
+        demo.load(
+            predict_with_status,
+            input_params,
+            [result_text, jv_curve],
+            queue=True,
+            show_progress=False  # 不显示进度条，避免界面闪烁
         )
 
 # 运行应用
