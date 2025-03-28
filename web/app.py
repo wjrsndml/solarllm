@@ -49,11 +49,11 @@ def create_conversation():
             data = response.json()
             current_session["conversation_id"] = data["id"]
             current_session["messages"] = []
-            return f"已创建新对话, ID: {data['id']}"
+            return f"已创建新对话, ID: {data['id']}",{}
         else:
-            return f"创建对话失败: {response.text}"
+            return f"创建对话失败: {response.text}",{}
     except Exception as e:
-        return f"创建对话出错: {str(e)}"
+        return f"创建对话出错: {str(e)}",{}
 
 # 加载对话历史
 def load_history():
@@ -84,12 +84,28 @@ def select_conversation(conversation_id):
                 # 转换消息格式
                 current_session["messages"] = []
                 
+                # 获取原始消息
+                messages = conv['messages']
+                
+                # 确保消息格式是message格式
+                formatted_messages = []
+                for msg in messages:
+                    # 检查消息是否已经是message格式
+                    if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                        formatted_messages.append(msg)
+                    # 如果是旧的列表格式 [user_msg, assistant_msg]，则转换
+                    elif isinstance(msg, list) and len(msg) == 2:
+                        formatted_messages.append({"role": "user", "content": msg[0]})
+                        if msg[1] is not None:  # 确保有回复
+                            formatted_messages.append({"role": "assistant", "content": msg[1]})
+                
                 # 重建对话历史界面
-                #logger.info(f"已加载对话: {conv['messages']}")
-                return conv['messages'], f"已加载对话: {conv['title']}"
+                logger.info(f"已加载对话，消息数: {len(formatted_messages)}")
+                return formatted_messages, f"已加载对话: {conv['title']}"
         
         return [], "未找到对话"
     except Exception as e:
+        logger.error(f"加载对话出错: {str(e)}")
         return [], f"加载对话出错: {str(e)}"
 
 # 更新模型选择
@@ -107,8 +123,8 @@ def send_message(message, chatbot):
         if "已创建新对话" not in result:
             return chatbot, result
     
-    # 添加用户消息到界面
-    chatbot.append([message, None])
+    # 添加用户消息到界面 - 使用消息格式
+    chatbot.append({"role": "user", "content": message})
     yield chatbot, ""
     
     # 构建消息请求
@@ -128,6 +144,9 @@ def send_message(message, chatbot):
         context_info = []
         image_info = []
         
+        # 添加一个空的助手消息作为占位符
+        chatbot.append({"role": "assistant", "content": ""})
+        
         for event in client.events():
             event_type = event.get("type", "")
             content = event.get("content", "")
@@ -135,17 +154,20 @@ def send_message(message, chatbot):
             if event_type == "content":
                 # 更新对话内容
                 assistant_response += content
-                chatbot[-1][1] = assistant_response
+                chatbot[-1]["content"] = assistant_response
                 yield chatbot, ""
             
             elif event_type == "reasoning":
                 # 收集推理过程
                 current_reasoning += content
+                # 可以选择将推理过程存储在消息的额外字段中
+                chatbot[-1]["reasoning"] = current_reasoning
                 
             elif event_type == "context":
                 # 保存上下文信息
                 context_info = content
-                # 这里可以添加显示上下文的逻辑
+                # 可以选择将上下文信息存储在消息的额外字段中
+                chatbot[-1]["context"] = context_info
                 
             elif event_type == "image":
                 # 处理图像信息
@@ -158,11 +180,16 @@ def send_message(message, chatbot):
                     # 在回复中添加图像引用
                     img_ref = f"\n\n![图像 {len(image_info)}]({full_url})"
                     assistant_response += img_ref
-                    chatbot[-1][1] = assistant_response
+                    chatbot[-1]["content"] = assistant_response
+                    # 存储图像信息
+                    if "images" not in chatbot[-1]:
+                        chatbot[-1]["images"] = []
+                    chatbot[-1]["images"].append({"url": full_url})
                     yield chatbot, ""
                 
             elif event_type == "error":
-                chatbot[-1][1] = f"错误: {content}"
+                chatbot[-1]["content"] = f"错误: {content}"
+                chatbot[-1]["error"] = True
                 yield chatbot, f"发生错误: {content}"
                 break
                 
@@ -182,8 +209,12 @@ def send_message(message, chatbot):
         
     except Exception as e:
         error_message = f"发送消息出错: {str(e)}"
-        if not chatbot[-1][1]:
-            chatbot[-1][1] = f"错误: {error_message}"
+        # 如果助手消息还不存在，则添加一个
+        if len(chatbot) % 2 == 1:
+            chatbot.append({"role": "assistant", "content": f"错误: {error_message}", "error": True})
+        else:
+            chatbot[-1]["content"] = f"错误: {error_message}"
+            chatbot[-1]["error"] = True
         yield chatbot, error_message
 
 # 获取可用模型
@@ -356,7 +387,7 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
         submit_btn.click(send_message, [msg, chatbot], [chatbot, status], queue=True)
         msg.submit(send_message, [msg, chatbot], [chatbot, status], queue=True)
         
-        new_chat_btn.click(create_conversation, [], [status])
+        new_chat_btn.click(create_conversation, [], [status,chatbot])
         model_btn.click(update_model, [model_dropdown], [status])
         
         load_btn.click(select_conversation, [history_dropdown], [chatbot, status])
