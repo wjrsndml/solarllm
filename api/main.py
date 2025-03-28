@@ -17,6 +17,7 @@ from matplotlib.figure import Figure
 import logging
 from fastapi.staticfiles import StaticFiles
 from mlutil import predict_solar_params
+from aging_utils import predict_aging_curve, get_default_aging_params
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -169,6 +170,14 @@ async def startup_event():
         connected = await mcp_client.connect()
         if connected:
             logger.info(f"成功连接到MCP服务器: {MCP_SERVER_URL}")
+            
+            # 注册工具
+            # 如果需要，可以在这里注册特定的工具处理程序
+            
+            # 检查工具列表
+            tools = await mcp_client.list_tools()
+            tool_names = [tool.name for tool in tools]
+            logger.info(f"可用工具: {tool_names}")
         else:
             logger.info(f"警告: 无法连接到MCP服务器: {MCP_SERVER_URL}，将使用本地功能")
     except Exception as e:
@@ -763,6 +772,148 @@ async def predict_params(params: SolarParams):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# 太阳能电池老化预测参数模型
+class AgingPredictParams(BaseModel):
+    Cell_architecture: Optional[int] = 1
+    Substrate_stack_sequence: Optional[int] = 10
+    Substrate_thickness: Optional[int] = 14
+    ETL_stack_sequence: Optional[int] = 39
+    ETL_thickness: Optional[int] = 78
+    ETL_additives_compounds: Optional[int] = 27
+    ETL_deposition_procedure: Optional[int] = 28
+    ETL_deposition_synthesis_atmosphere: Optional[int] = 12
+    ETL_deposition_solvents: Optional[int] = 18
+    ETL_deposition_substrate_temperature: Optional[int] = 8
+    ETL_deposition_thermal_annealing_temperature: Optional[int] = 27
+    ETL_deposition_thermal_annealing_time: Optional[int] = 19
+    ETL_deposition_thermal_annealing_atmosphere: Optional[int] = 10
+    ETL_storage_atmosphere: Optional[int] = 2
+    Perovskite_dimension_0D: Optional[int] = 0
+    Perovskite_dimension_2D: Optional[int] = 0
+    Perovskite_dimension_2D3D_mixture: Optional[int] = 0
+    Perovskite_dimension_3D: Optional[int] = 1
+    Perovskite_dimension_3D_with_2D_capping_layer: Optional[int] = 0
+    Perovskite_composition_a_ions: Optional[int] = 27
+    Perovskite_composition_a_ions_coefficients: Optional[int] = 16
+    Perovskite_composition_b_ions: Optional[int] = 7
+    Perovskite_composition_b_ions_coefficients: Optional[int] = 7
+    Perovskite_composition_c_ions: Optional[int] = 2
+    Perovskite_composition_c_ions_coefficients: Optional[int] = 35
+    Perovskite_composition_inorganic: Optional[int] = 0
+    Perovskite_composition_leadfree: Optional[int] = 0
+    Perovskite_additives_compounds: Optional[int] = 121
+    Perovskite_thickness: Optional[int] = 320
+    Perovskite_band_gap: Optional[float] = 1.6
+    Perovskite_pl_max: Optional[int] = 770
+    Perovskite_deposition_number_of_deposition_steps: Optional[int] = 1
+    Perovskite_deposition_procedure: Optional[int] = 12
+    Perovskite_deposition_aggregation_state_of_reactants: Optional[int] = 4
+    Perovskite_deposition_synthesis_atmosphere: Optional[int] = 13
+    Perovskite_deposition_solvents: Optional[int] = 35
+    Perovskite_deposition_substrate_temperature: Optional[int] = 5
+    Perovskite_deposition_quenching_induced_crystallisation: Optional[int] = 1
+    Perovskite_deposition_quenching_media: Optional[int] = 19
+    Perovskite_deposition_quenching_media_volume: Optional[int] = 9
+    Perovskite_deposition_thermal_annealing_temperature: Optional[int] = 0
+    Perovskite_deposition_thermal_annealing_time: Optional[int] = 21
+    Perovskite_deposition_thermal_annealing_atmosphere: Optional[int] = 7
+    Perovskite_deposition_solvent_annealing: Optional[int] = 0
+    HTL_stack_sequence: Optional[int] = 115
+    HTL_thickness_list: Optional[int] = 40
+    HTL_additives_compounds: Optional[int] = 50
+    HTL_deposition_procedure: Optional[int] = 16
+    HTL_deposition_aggregation_state_of_reactants: Optional[int] = 4
+    HTL_deposition_synthesis_atmosphere: Optional[int] = 8
+    HTL_deposition_solvents: Optional[int] = 8
+    HTL_deposition_thermal_annealing_temperature: Optional[int] = 13
+    HTL_deposition_thermal_annealing_time: Optional[int] = 9
+    HTL_deposition_thermal_annealing_atmosphere: Optional[int] = 8
+    Backcontact_stack_sequence: Optional[int] = 2
+    Backcontact_thickness_list: Optional[int] = 150
+    Backcontact_deposition_procedure: Optional[int] = 3
+    Encapsulation: Optional[int] = 0
+    Encapsulation_stack_sequence: Optional[int] = 19
+    Encapsulation_edge_sealing_materials: Optional[int] = 6
+    Encapsulation_atmosphere_for_encapsulation: Optional[int] = 4
+    JV_default_Voc: Optional[float] = 0.82
+    JV_default_Jsc: Optional[float] = 20.98
+    JV_default_FF: Optional[float] = 0.71
+    JV_default_PCE: Optional[float] = 12.29
+    Stability_protocol: Optional[int] = 1
+    Stability_average_over_n_number_of_cells: Optional[int] = 1
+    Stability_light_intensity: Optional[int] = 0
+    Stability_light_spectra: Optional[int] = 3
+    Stability_light_UV_filter: Optional[int] = 0
+    Stability_potential_bias_load_condition: Optional[int] = 2
+    Stability_PCE_burn_in_observed: Optional[int] = 0
+    Stability_light_source_type: Optional[int] = 0
+    Stability_temperature_range: Optional[int] = 25
+    Stability_atmosphere: Optional[int] = 4
+    Stability_relative_humidity_average_value: Optional[int] = 0
+
+# 获取默认老化预测参数
+@app.get("/api/aging/default-params")
+async def get_aging_default_params():
+    """获取老化预测的默认参数"""
+    try:
+        default_params = get_default_aging_params()
+        return default_params
+    except Exception as e:
+        logger.error(f"获取老化预测默认参数失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 太阳能电池老化预测
+@app.post("/api/aging/predict")
+async def predict_aging(params: AgingPredictParams):
+    """
+    预测太阳能电池的老化曲线
+    
+    参数:
+        params: 包含太阳能电池参数的请求体
+        
+    返回:
+        预测结果和老化曲线图像
+    """
+    try:
+        logger.info("开始老化曲线预测")
+        
+        # 将请求参数转换为字典
+        input_params = params.dict()
+        
+        # 调用老化预测函数
+        predicted_curve, (fig, file_path) = predict_aging_curve(input_params)
+        
+        # 将曲线数据转换为结构化格式
+        # 假设前20个点是y坐标，后面的点是x坐标
+        y_coords = predicted_curve[:20].tolist()
+        x_coords = predicted_curve[20:].tolist()
+        
+        curve_data = {
+            "x_values": x_coords,  # 时间值
+            "y_values": y_coords,  # PCE%值
+            "file_path": file_path  # 图表文件路径
+        }
+        
+        # 将图形转换为base64编码
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        
+        logger.info(f"老化曲线预测完成，图表保存至: {file_path}")
+        
+        # 返回预测结果和图像
+        return {
+            "curve_data": curve_data,
+            "curve_image": img_base64
+        }
+    except Exception as e:
+        logger.error(f"老化曲线预测失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # 直接运行入口点
 if __name__ == "__main__":
