@@ -1,54 +1,55 @@
-# React + TypeScript + Vite
+# 太阳能电池AI对话前端
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+这是基于Next.js和Shadcn UI开发的太阳能电池AI对话助手前端应用。支持与后端API进行交互，实现流式输出和图片显示功能。
 
-Currently, two official plugins are available:
+## 功能特点
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 支持流式响应，实时显示AI回复
+- 支持显示和管理图片输出
+- 支持多模型切换
+- 响应式设计，适配移动端和桌面端
+- 聊天历史管理
+- 推理过程显示
 
-## Expanding the ESLint configuration
+## 技术栈
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- Next.js 14 - React框架
+- TypeScript - 类型安全
+- Shadcn UI - 组件库
+- Tailwind CSS - 样式系统
+- EventSource API - 流式响应
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+## 开发设置
+
+确保已安装Node.js (推荐v18或更高版本)
+
+```bash
+# 安装依赖
+npm install
+
+# 开发模式启动
+npm run dev
+
+# 构建生产版本
+npm run build
+
+# 启动生产版本
+npm start
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 与后端集成
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+前端应用需要与后端API进行通信，确保后端服务已启动并可访问。API地址配置可在环境变量中设置：
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
 ```
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+```
+
+如果没有设置，默认使用相对路径 `/api`。
+
+## 使用方法
+
+1. 在浏览器访问 `http://localhost:3000`
+2. 使用左侧导航创建新对话或选择已有对话
+3. 在输入框中输入问题并发送
+4. 实时查看AI助手的回复，包括图片输出

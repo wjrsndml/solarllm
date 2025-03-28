@@ -37,7 +37,7 @@ def test_image_sending():
     
     # 测试消息 - 一个会触发工具调用且返回图片的消息
     message = {
-        "messages": [{"role": "user", "content": "模拟硅厚度为150的太阳能电池"}],
+        "messages": [{"role": "user", "content": "模拟硅厚度为150的太阳能电池并展示结果，注意不要在输出中包含文件路径"}],
         "model": "deepseek-chat",
         "conversation_id": session_id
     }

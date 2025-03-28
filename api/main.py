@@ -429,36 +429,35 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                                     # 添加图像信息到结果
                                                     result_content += f"\n(结果包含{len(file_paths)}个图像文件)"
                                                     
-                                                    # 发送每个图像文件
+                                                    # 发送每个图像文件的路径信息而不是base64数据
                                                     for i, file_path in enumerate(file_paths):
                                                         try:
                                                             # 确认文件存在
                                                             if os.path.exists(file_path):
-                                                                # 读取图像文件
-                                                                with open(file_path, 'rb') as img_file:
-                                                                    img_data = img_file.read()
-                                                                
                                                                 # 确定图像格式（从文件扩展名）
                                                                 img_format = os.path.splitext(file_path)[1].lstrip('.')
                                                                 if not img_format:
                                                                     img_format = 'png'  # 默认格式
                                                                 
-                                                                # 转换为base64编码
-                                                                img_base64 = base64.b64encode(img_data).decode('utf-8')
+                                                                # 构建可访问的URL路径
+                                                                url_path = file_path
+                                                                if file_path.startswith('simulation_results/') or file_path.startswith('plot_results/'):
+                                                                    # 这些路径已经可以通过/api/files/访问
+                                                                    url_path = f"/api/files/{file_path}"
                                                                 
-                                                                # 发送图像数据
+                                                                # 发送图像路径信息，而不是base64数据
                                                                 image_data = {
                                                                     'type': 'image', 
                                                                     'content': {
                                                                         'tool_name': tool_name,
-                                                                        'image_data': img_base64,
+                                                                        'source_path': file_path,
+                                                                        'url_path': url_path,
                                                                         'image_index': i,
-                                                                        'format': img_format,
-                                                                        'source_path': file_path
+                                                                        'format': img_format
                                                                     }
                                                                 }
                                                                 yield f"data: {json.dumps(image_data)}\n\n"
-                                                                logger.info(f"发送工具 {tool_name} 的图像数据 #{i}，文件路径: {file_path}")
+                                                                logger.info(f"发送工具 {tool_name} 的图像路径数据 #{i}，文件路径: {file_path}")
                                                             else:
                                                                 logger.info(f"图像文件不存在: {file_path}")
                                                         except Exception as e:
@@ -471,32 +470,45 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                                     if not has_file_paths:
                                                         result_content += "\n(结果包含图像数据)"
                                                     
-                                                    # 单独处理图像数据对象，发送给前端
+                                                    # 处理图像数据对象
                                                     start_index = len(file_paths)  # 从file_paths之后的索引开始
                                                     for i, img in enumerate(content_dict['image']):
                                                         try:
                                                             # 获取图像数据
                                                             if hasattr(img, 'data') and img.data:
-                                                                # 转换为base64编码
-                                                                img_base64 = base64.b64encode(img.data).decode('utf-8')
-                                                                
-                                                                # 确定图像格式
+                                                                # 获取或生成图像格式
                                                                 img_format = 'png'
                                                                 if hasattr(img, 'format') and img.format:
                                                                     img_format = img.format
                                                                 
-                                                                # 发送图像数据，但不将其添加到消息历史中
+                                                                # 生成临时文件名并保存图像
+                                                                temp_dir = "plot_results"
+                                                                os.makedirs(temp_dir, exist_ok=True)
+                                                                
+                                                                # 使用工具名、时间戳和索引生成唯一文件名
+                                                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                                                filename = f"{temp_dir}/{tool_name}_{timestamp}_{i}.{img_format}"
+                                                                
+                                                                # 写入图像文件
+                                                                with open(filename, 'wb') as f:
+                                                                    f.write(img.data)
+                                                                
+                                                                # 构建URL路径
+                                                                url_path = f"/api/files/{filename}"
+                                                                
+                                                                # 发送图像路径，而不是base64数据
                                                                 image_data = {
                                                                     'type': 'image', 
                                                                     'content': {
                                                                         'tool_name': tool_name,
-                                                                        'image_data': img_base64,
+                                                                        'source_path': filename,
+                                                                        'url_path': url_path,
                                                                         'image_index': i + start_index,
                                                                         'format': img_format
                                                                     }
                                                                 }
                                                                 yield f"data: {json.dumps(image_data)}\n\n"
-                                                                logger.info(f"发送工具 {tool_name} 的图像对象数据 #{i + start_index}")
+                                                                logger.info(f"保存工具 {tool_name} 的图像对象数据 #{i + start_index} 到 {filename}")
                                                         except Exception as e:
                                                             logger.info(f"处理图像对象数据时出错: {str(e)}")
                                             except Exception as e:
