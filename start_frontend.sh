@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 BLUE='\033[0;34m'
 NC='\033[0m' # 无颜色
-
+PYTHON_PATH="/home/gqh/miniconda3/envs/solarllm/bin/python"
 # 设置路径
 WORKSPACE_DIR="$(pwd)"
 FRONTEND_DIR="${WORKSPACE_DIR}/web"
@@ -35,6 +35,8 @@ fi
 
 # 进入前端目录
 cd "$FRONTEND_DIR"
+
+
 
 # 检查是否有旧的前端进程
 if [ -f "frontend.pid" ]; then
@@ -63,7 +65,7 @@ fi
 
 # 启动前端服务
 echo -e "${GREEN}启动前端服务...${NC}"
-nohup npm run dev -- --host > frontend.log 2>&1 & echo $! > frontend.pid
+nohup $PYTHON_PATH run.py > frontend.log 2>&1 & echo $! > frontend.pid
 FRONTEND_PID=$(cat frontend.pid)
 
 # 等待前端服务启动
@@ -91,7 +93,7 @@ echo -e "${BLUE}----------------------------------------${NC}"
 # 打印访问信息
 HOST_IP=$(hostname -I | awk '{print $1}')
 echo -e "${GREEN}您可以通过以下地址访问应用:${NC}"
-echo -e "${BLUE}http://$HOST_IP:5174${NC}"
+echo -e "${BLUE}http://$HOST_IP:5173${NC}"
 echo -e "\n${YELLOW}使用以下命令查看日志:${NC}"
 echo -e "${BLUE}  tail -f $FRONTEND_DIR/frontend.log  # 查看前端日志${NC}"
 

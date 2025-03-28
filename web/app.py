@@ -522,14 +522,14 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
                                   label="Si 厚度 (μm)", step=1)
                 t_SiO2 = gr.Slider(minimum=0.5, maximum=5, value=default_params.get('t_SiO2', 1.4), 
                                   label="SiO2 厚度 (nm)", step=0.1)
-                t_polySi_rear_P = gr.Slider(minimum=50, maximum=200, value=default_params.get('t_polySi_rear_P', 100), 
-                                         label="后表面 PolySi 厚度 (nm)", step=1)
+                t_polySi_rear_P = gr.Slider(minimum=0.01, maximum=0.3, value=default_params.get('t_polySi_rear_P', 0.1), 
+                                         label="后表面 PolySi 厚度 (μm)", step=0.01)
                 front_junc = gr.Slider(minimum=0.1, maximum=2, value=default_params.get('front_junc', 0.5), 
                                      label="前表面结深度 (μm)", step=0.1)
                 rear_junc = gr.Slider(minimum=0.1, maximum=2, value=default_params.get('rear_junc', 0.5), 
                                     label="后表面结深度 (μm)", step=0.1)
-                resist_rear = gr.Slider(minimum=10, maximum=500, value=default_params.get('resist_rear', 100), 
-                                      label="后表面电阻 (Ω·cm)", step=10)
+                resist_rear = gr.Slider(minimum=0.01, maximum=3, value=default_params.get('resist_rear', 1), 
+                                      label="后表面电阻 (Ω·cm)", step=0.01)
                 
             with gr.Column():
                 gr.Markdown("## 掺杂与界面参数")
@@ -537,49 +537,49 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
                 # 使用自定义格式显示科学计数法
                 with gr.Row():
                     with gr.Column(scale=3):
-                        Nd_top = gr.Slider(minimum=1e19, maximum=1e21, value=default_params.get('Nd_top', 1e20), 
+                        Nd_top = gr.Slider(minimum=1e18, maximum=1e21, value=default_params.get('Nd_top', 1e20), 
                                         label="前表面掺杂浓度 (cm^-3)", step=1e19, scale=0)
                     with gr.Column(scale=1):
                         Nd_top_display = gr.Markdown(f"当前值: {default_params.get('Nd_top', 1e20):.2e} cm^-3")
                 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        Nd_rear = gr.Slider(minimum=1e19, maximum=1e21, value=default_params.get('Nd_rear', 1e20), 
+                        Nd_rear = gr.Slider(minimum=1e18, maximum=1e21, value=default_params.get('Nd_rear', 1e20), 
                                         label="后表面掺杂浓度 (cm^-3)", step=1e19, scale=0)
                     with gr.Column(scale=1):
                         Nd_rear_display = gr.Markdown(f"当前值: {default_params.get('Nd_rear', 1e20):.2e} cm^-3")
                 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        Nt_polySi_top = gr.Slider(minimum=1e19, maximum=1e21, value=default_params.get('Nt_polySi_top', 1e20), 
+                        Nt_polySi_top = gr.Slider(minimum=1e14, maximum=1e20, value=default_params.get('Nt_polySi_top', 1e19), 
                                                 label="前表面 PolySi 掺杂浓度 (cm^-3)", step=1e19, scale=0)
                     with gr.Column(scale=1):
-                        Nt_polySi_top_display = gr.Markdown(f"当前值: {default_params.get('Nt_polySi_top', 1e20):.2e} cm^-3")
+                        Nt_polySi_top_display = gr.Markdown(f"当前值: {default_params.get('Nt_polySi_top', 1e19):.2e} cm^-3")
                 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        Nt_polySi_rear = gr.Slider(minimum=1e19, maximum=1e21, value=default_params.get('Nt_polySi_rear', 1e20), 
+                        Nt_polySi_rear = gr.Slider(minimum=1e14, maximum=1e22, value=default_params.get('Nt_polySi_rear', 1e20), 
                                                 label="后表面 PolySi 掺杂浓度 (cm^-3)", step=1e19, scale=0)
                     with gr.Column(scale=1):
                         Nt_polySi_rear_display = gr.Markdown(f"当前值: {default_params.get('Nt_polySi_rear', 1e20):.2e} cm^-3")
                 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        Dit_Si_SiOx = gr.Slider(minimum=1e9, maximum=1e12, value=default_params.get('Dit_Si_SiOx', 1e10), 
+                        Dit_Si_SiOx = gr.Slider(minimum=5, maximum=5e16, value=default_params.get('Dit_Si_SiOx', 1e10), 
                                             label="Si-SiOx 界面缺陷密度 (cm^-2)", step=1e9, scale=0)
                     with gr.Column(scale=1):
                         Dit_Si_SiOx_display = gr.Markdown(f"当前值: {default_params.get('Dit_Si_SiOx', 1e10):.2e} cm^-2")
                 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        Dit_SiOx_Poly = gr.Slider(minimum=1e9, maximum=1e12, value=default_params.get('Dit_SiOx_Poly', 1e10), 
+                        Dit_SiOx_Poly = gr.Slider(minimum=5, maximum=5e16, value=default_params.get('Dit_SiOx_Poly', 1e10), 
                                                 label="SiOx-Poly 界面缺陷密度 (cm^-2)", step=1e9, scale=0)
                     with gr.Column(scale=1):
                         Dit_SiOx_Poly_display = gr.Markdown(f"当前值: {default_params.get('Dit_SiOx_Poly', 1e10):.2e} cm^-2")
                 
                 with gr.Row():
                     with gr.Column(scale=3):
-                        Dit_top = gr.Slider(minimum=1e9, maximum=1e12, value=default_params.get('Dit_top', 1e10), 
+                        Dit_top = gr.Slider(minimum=5, maximum=5e14, value=default_params.get('Dit_top', 1e10), 
                                         label="顶部界面缺陷密度 (cm^-2)", step=1e9, scale=0)
                     with gr.Column(scale=1):
                         Dit_top_display = gr.Markdown(f"当前值: {default_params.get('Dit_top', 1e10):.2e} cm^-2")

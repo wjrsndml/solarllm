@@ -58,13 +58,11 @@ else
     FRONTEND_PID=""
 fi
 
-# 查找所有npm进程
-NPM_PIDS=$(ps aux | grep -E 'npm run dev|node.*vite' | grep -v grep | awk '{print $2}')
-NODE_PIDS=$(ps aux | grep -E 'node.*dev-server|node.*vite' | grep -v grep | awk '{print $2}')
-VITE_PIDS=$(ps aux | grep -E 'vite' | grep -v grep | awk '{print $2}')
+# 查找所有Python进程中运行Gradio的进程
+GRADIO_PIDS=$(ps aux | grep -E 'python.*run\.py|python.*app\.py|gradio' | grep -v grep | awk '{print $2}')
 
 # 合并所有找到的PID
-ALL_FRONTEND_PIDS="$NPM_PIDS $NODE_PIDS $VITE_PIDS"
+ALL_FRONTEND_PIDS="$GRADIO_PIDS"
 
 # 如果有记录的前端PID，也加入列表
 if [ -n "$FRONTEND_PID" ] && ps -p $FRONTEND_PID > /dev/null; then
@@ -114,10 +112,10 @@ fi
 # 检查端口占用情况
 echo -e "\n${YELLOW}检查端口占用情况...${NC}"
 
-# 检查前端端口(5173/5174)
-FRONTEND_PORT_PIDS=$(lsof -t -i:5173,5174 2>/dev/null)
+# 检查前端端口(5173)
+FRONTEND_PORT_PIDS=$(lsof -t -i:5173 2>/dev/null)
 if [ -n "$FRONTEND_PORT_PIDS" ]; then
-    echo -e "${RED}发现仍有进程占用前端端口 (5173/5174): $FRONTEND_PORT_PIDS${NC}"
+    echo -e "${RED}发现仍有进程占用前端端口 (5173): $FRONTEND_PORT_PIDS${NC}"
     echo -e "${YELLOW}正在强制终止这些进程...${NC}"
     for pid in $FRONTEND_PORT_PIDS; do
         echo -e "${RED}强制终止占用端口的进程 (PID: $pid)...${NC}"
@@ -125,7 +123,7 @@ if [ -n "$FRONTEND_PORT_PIDS" ]; then
     done
     echo -e "${GREEN}前端端口已释放${NC}"
 else
-    echo -e "${GREEN}前端端口 (5173/5174) 未被占用${NC}"
+    echo -e "${GREEN}前端端口 (5173) 未被占用${NC}"
 fi
 
 # 打印总结

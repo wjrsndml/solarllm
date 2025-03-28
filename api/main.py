@@ -772,10 +772,10 @@ async def get_default_params():
     default_params = {
         'Si_thk': 180,
         't_SiO2': 1.4,
-        't_polySi_rear_P': 100,
+        't_polySi_rear_P': 0.1,
         'front_junc': 0.5,
         'rear_junc': 0.5,
-        'resist_rear': 100,
+        'resist_rear': 0.1,
         'Nd_top': 1e20,
         'Nd_rear': 1e20,
         'Nt_polySi_top': 1e20,
