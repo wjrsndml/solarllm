@@ -38,9 +38,11 @@ export function ChatContainer() {
   // 活跃对话变更时更新消息
   useEffect(() => {
     if (activeConversation) {
-      setMessages(activeConversation.messages);
+      setMessages(activeConversation.messages || []);
+      setStreamingMessage(null); // 确保切换对话时清理流式消息
     } else {
       setMessages([]);
+      setStreamingMessage(null);
     }
   }, [activeConversation]);
 
@@ -135,11 +137,12 @@ export function ChatContainer() {
     setMessages(updatedMessages);
     
     // 初始化流式响应消息
-    setStreamingMessage({
+    const initialStreamingMessage: Message = {
       role: 'assistant',
       content: '',
       images: [],
-    });
+    };
+    setStreamingMessage(initialStreamingMessage);
     
     // 设置加载状态
     setIsLoading(true);
@@ -191,12 +194,11 @@ export function ChatContainer() {
         break;
         
       case 'image':
-        // 图片处理
-        const msgIndex = messages.length;
-        const currentImages = messageImages[msgIndex] || [];
+        // 图片处理 - 使用一个稳定的键名"assistant"存储助手消息的图片
+        const currentImages = messageImages["assistant"] || [];
         setMessageImages({
           ...messageImages,
-          [msgIndex]: [...currentImages, content]
+          "assistant": [...currentImages, content]
         });
         
         // 更新流式消息中的图片
@@ -223,26 +225,35 @@ export function ChatContainer() {
         // 完成响应，更新消息列表
         if (streamingMessage) {
           const finalMessage = { ...streamingMessage };
-          if (messageImages[messages.length] && messageImages[messages.length].length > 0) {
-            finalMessage.images = messageImages[messages.length];
+          // 使用新的键名获取图片
+          if (messageImages["assistant"] && messageImages["assistant"].length > 0) {
+            finalMessage.images = messageImages["assistant"];
           }
-          setMessages([...messages, finalMessage]);
+          
+          // 更新消息列表
+          const updatedMessages = [...messages, finalMessage];
+          setMessages(updatedMessages);
           setStreamingMessage(null);
           
           // 更新本地对话历史
           if (activeConversation) {
+            // 确保我们包含用户的最后一条消息和AI的回复
+            const lastUserMessage = messages[messages.length - 1];
             const updatedConversation = {
               ...activeConversation,
-              messages: [...activeConversation.messages, messages[messages.length - 1], finalMessage]
+              messages: [...activeConversation.messages, lastUserMessage, finalMessage]
             };
             
             const updatedConversations = conversations.map(conv => 
               conv.id === updatedConversation.id ? updatedConversation : conv
             );
             
-            setConversations(updatedConversations);
             setActiveConversation(updatedConversation);
+            setConversations(updatedConversations);
           }
+          
+          // 清空图片缓存
+          setMessageImages({});
         }
         break;
         
@@ -255,23 +266,31 @@ export function ChatContainer() {
   const renderMessages = () => {
     // 常规消息
     const messageElements = messages.map((message, index) => {
-      // 如果是助手消息，可能有图片
-      const msgWithImages = { 
-        ...message, 
-        images: messageImages[index] || [] 
-      };
-      return <ChatMessage key={index} message={msgWithImages} />;
+      // 只有助手消息才可能有图片
+      if (message.role === 'assistant') {
+        const msgWithImages = { 
+          ...message, 
+          images: messageImages["assistant"] || [] 
+        };
+        return <ChatMessage key={`msg-${index}`} message={msgWithImages} />;
+      }
+      // 用户消息不添加图片
+      return <ChatMessage key={`msg-${index}`} message={message} />;
     });
     
     // 流式消息（如果有）
-    if (streamingMessage && isLoading) {
+    if (streamingMessage) {
       // 添加图片到流式消息
       const streamingWithImages = {
         ...streamingMessage,
-        images: messageImages[messages.length] || []
+        images: messageImages["assistant"] || []
       };
       messageElements.push(
-        <ChatMessage key="streaming" message={streamingWithImages} isLoading={true} />
+        <ChatMessage 
+          key="streaming" 
+          message={streamingWithImages} 
+          isLoading={isLoading} 
+        />
       );
     }
     
