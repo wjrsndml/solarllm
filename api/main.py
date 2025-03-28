@@ -234,7 +234,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
         
         # 用于累积工具调用信息的变量
         accumulated_tool_calls = {}  # 格式: {index: {'id': id, 'name': name, 'arguments': arguments}}
-        
+        images_info = []
         while True:
             try:
                 # 初始API调用或后续调用
@@ -458,6 +458,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                                                 }
                                                                 yield f"data: {json.dumps(image_data)}\n\n"
                                                                 logger.info(f"发送工具 {tool_name} 的图像路径数据 #{i}，文件路径: {file_path}")
+                                                                images_info.append(image_data['content'])
                                                             else:
                                                                 logger.info(f"图像文件不存在: {file_path}")
                                                         except Exception as e:
@@ -509,6 +510,7 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
                                                                 }
                                                                 yield f"data: {json.dumps(image_data)}\n\n"
                                                                 logger.info(f"保存工具 {tool_name} 的图像对象数据 #{i + start_index} 到 {filename}")
+                                                                images_info.append(image_data['content'])
                                                         except Exception as e:
                                                             logger.info(f"处理图像对象数据时出错: {str(e)}")
                                             except Exception as e:
@@ -590,7 +592,8 @@ async def generate_stream_response(chat_request: ChatRequest, disconnect_event: 
             assistant_message = {
                 "role": "assistant",
                 "content": full_content,
-                "reasoning_content": full_reasoning if chat_request.model == "deepseek-reasoner" else None
+                "reasoning_content": full_reasoning if chat_request.model == "deepseek-reasoner" else None,
+                "images": images_info if images_info else None
             }
             
             # 更新对话历史

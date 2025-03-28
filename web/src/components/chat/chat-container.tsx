@@ -40,9 +40,24 @@ export function ChatContainer() {
     if (activeConversation) {
       setMessages(activeConversation.messages || []);
       setStreamingMessage(null); // 确保切换对话时清理流式消息
+      
+      // 处理历史消息中的图片
+      const newMessageImages: { [key: number]: any[] } = {};
+      
+      // 遍历所有消息，提取图片
+      activeConversation.messages?.forEach((message, index) => {
+        if (message.role === 'assistant' && message.images && message.images.length > 0) {
+          // 使用消息索引作为键，存储图片数据
+          newMessageImages[index] = message.images;
+        }
+      });
+      
+      // 更新图片状态
+      setMessageImages(newMessageImages);
     } else {
       setMessages([]);
       setStreamingMessage(null);
+      setMessageImages({});
     }
   }, [activeConversation]);
 
@@ -221,41 +236,42 @@ export function ChatContainer() {
         );
         break;
         
-      case 'done':
-        // 完成响应，更新消息列表
-        if (streamingMessage) {
-          const finalMessage = { ...streamingMessage };
-          // 使用新的键名获取图片
-          if (messageImages["assistant"] && messageImages["assistant"].length > 0) {
-            finalMessage.images = messageImages["assistant"];
-          }
-          
-          // 更新消息列表
-          const updatedMessages = [...messages, finalMessage];
-          setMessages(updatedMessages);
-          setStreamingMessage(null);
-          
-          // 更新本地对话历史
-          if (activeConversation) {
-            // 确保我们包含用户的最后一条消息和AI的回复
-            const lastUserMessage = messages[messages.length - 1];
-            const updatedConversation = {
-              ...activeConversation,
-              messages: [...activeConversation.messages, lastUserMessage, finalMessage]
+        case 'done':
+          // 完成响应，更新消息列表
+          if (streamingMessage) {
+            // 创建最终消息，确保包含图片
+            const finalMessage = { 
+              ...streamingMessage,
+              // 确保图片数据已包含在最终消息中
+              images: messageImages["assistant"] || streamingMessage.images || []
             };
             
-            const updatedConversations = conversations.map(conv => 
-              conv.id === updatedConversation.id ? updatedConversation : conv
-            );
+            // 更新消息列表
+            const updatedMessages = [...messages, finalMessage];
+            setMessages(updatedMessages);
+            setStreamingMessage(null);
             
-            setActiveConversation(updatedConversation);
-            setConversations(updatedConversations);
+            // 更新本地对话历史
+            if (activeConversation) {
+              // 确保我们包含用户的最后一条消息和AI的回复
+              const lastUserMessage = messages[messages.length - 1];
+              const updatedConversation = {
+                ...activeConversation,
+                messages: [...activeConversation.messages, lastUserMessage, finalMessage]
+              };
+              
+              const updatedConversations = conversations.map(conv => 
+                conv.id === updatedConversation.id ? updatedConversation : conv
+              );
+              
+              setActiveConversation(updatedConversation);
+              setConversations(updatedConversations);
+            }
+            
+            // 清空图片缓存
+            setMessageImages({});
           }
-          
-          // 清空图片缓存
-          setMessageImages({});
-        }
-        break;
+          break;
         
       default:
         console.log(`未处理的响应类型: ${type}`, content);
@@ -268,9 +284,15 @@ export function ChatContainer() {
     const messageElements = messages.map((message, index) => {
       // 只有助手消息才可能有图片
       if (message.role === 'assistant') {
+        // 首先检查消息自身是否已包含图片数据
+        if (message.images && message.images.length > 0) {
+          return <ChatMessage key={`msg-${index}`} message={message} />;
+        }
+        
+        // 否则检查是否在messageImages中有对应图片
         const msgWithImages = { 
           ...message, 
-          images: messageImages["assistant"] || [] 
+          images: messageImages[index] || [] 
         };
         return <ChatMessage key={`msg-${index}`} message={msgWithImages} />;
       }
