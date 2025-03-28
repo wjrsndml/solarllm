@@ -6,7 +6,13 @@ from datetime import datetime
 import base64
 from PIL import Image
 import io
-
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename='web.log'
+)
+logger = logging.getLogger(__name__)
 # 配置后端API地址
 API_BASE_URL = "http://localhost:8000/api"
 
@@ -66,24 +72,21 @@ def load_history():
 def select_conversation(conversation_id):
     if not conversation_id:
         return "请选择一个对话"
-    
+    logger.info(f"加载对话: {conversation_id}")
     try:
         history = load_history()
         for conv in history:
-            if conv["id"] == conversation_id:
+            created_at = datetime.fromisoformat(conv["created_at"]).strftime("%m-%d %H:%M")
+            title = f"{created_at} - {conv['title']}"
+            logger.info(f"加载对话: {conv['id']}")
+            if str(title) == str(conversation_id):
                 current_session["conversation_id"] = conversation_id
                 # 转换消息格式
                 current_session["messages"] = []
                 
                 # 重建对话历史界面
-                chatbot = []
-                for msg in conv["messages"]:
-                    if msg["role"] == "user":
-                        chatbot.append([msg["content"], None])
-                    elif msg["role"] == "assistant" and len(chatbot) > 0:
-                        chatbot[-1][1] = msg["content"]
-                
-                return chatbot, f"已加载对话: {conv['title']}"
+                #logger.info(f"已加载对话: {conv['messages']}")
+                return conv['messages'], f"已加载对话: {conv['title']}"
         
         return [], "未找到对话"
     except Exception as e:
@@ -205,7 +208,8 @@ def get_conversation_choices():
             # 格式化标题显示：截止时间 + 标题
             created_at = datetime.fromisoformat(conv["created_at"]).strftime("%m-%d %H:%M")
             title = f"{created_at} - {conv['title']}"
-            choices.append((conv["id"], title))
+            choices.append(title)
+        # logger.info(f"获取对话选项: {choices}")
         return choices
     except Exception as e:
         print(f"获取对话选项出错: {str(e)}")
@@ -313,7 +317,8 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
                     height=600,
                     show_copy_button=True,
                     show_label=False,
-                    render_markdown=True
+                    render_markdown=True,
+                    type='messages'
                 )
                 
                 with gr.Row():
@@ -332,7 +337,8 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
                     model_dropdown = gr.Dropdown(
                         get_available_models(),
                         label="选择模型",
-                        value="deepseek-chat"
+                        value="deepseek-chat",
+                        allow_custom_value=True
                     )
                     model_btn = gr.Button("切换模型")
                 
