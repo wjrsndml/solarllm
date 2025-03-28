@@ -49,11 +49,11 @@ def create_conversation():
             data = response.json()
             current_session["conversation_id"] = data["id"]
             current_session["messages"] = []
-            return f"已创建新对话, ID: {data['id']}",{}
+            return f"已创建新对话, ID: {data['id']}", []
         else:
-            return f"创建对话失败: {response.text}",{}
+            return f"创建对话失败: {response.text}", []
     except Exception as e:
-        return f"创建对话出错: {str(e)}",{}
+        return f"创建对话出错: {str(e)}", []
 
 # 加载对话历史
 def load_history():
@@ -92,7 +92,49 @@ def select_conversation(conversation_id):
                 for msg in messages:
                     # 检查消息是否已经是message格式
                     if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                        formatted_messages.append(msg)
+                        formatted_msg = msg.copy()
+                        
+                        # 处理图片信息 - 有多种可能的格式
+                        if "images" in formatted_msg and formatted_msg["images"]:
+                            images = formatted_msg["images"]
+                            if not isinstance(images, list):
+                                images = [images]
+                                
+                            for i, img_info in enumerate(images):
+                                # 如果是字典格式
+                                if isinstance(img_info, dict):
+                                    # 尝试从不同字段获取URL路径
+                                    url_path = None
+                                    if "url_path" in img_info:
+                                        url_path = img_info["url_path"]
+                                    elif "url" in img_info:
+                                        url_path = img_info["url"]
+                                    elif "source_path" in img_info:
+                                        url_path = f"/api/files/{img_info['source_path']}"
+                                        
+                                    if url_path:
+                                        if not url_path.startswith(("http://", "https://")):
+                                            full_url = f"{API_BASE_URL.replace('/api', '')}{url_path}"
+                                        else:
+                                            full_url = url_path
+                                            
+                                        # 添加图片引用到内容中
+                                        img_label = img_info.get("label", f"图像 {i+1}")
+                                        img_ref = f"\n\n![{img_label}]({full_url})"
+                                        if img_ref not in formatted_msg["content"]:
+                                            formatted_msg["content"] += img_ref
+                                # 如果直接是URL字符串
+                                elif isinstance(img_info, str):
+                                    if not img_info.startswith(("http://", "https://")):
+                                        full_url = f"{API_BASE_URL.replace('/api', '')}{img_info}"
+                                    else:
+                                        full_url = img_info
+                                    
+                                    img_ref = f"\n\n![图像 {i+1}]({full_url})"
+                                    if img_ref not in formatted_msg["content"]:
+                                        formatted_msg["content"] += img_ref
+                            
+                        formatted_messages.append(formatted_msg)
                     # 如果是旧的列表格式 [user_msg, assistant_msg]，则转换
                     elif isinstance(msg, list) and len(msg) == 2:
                         formatted_messages.append({"role": "user", "content": msg[0]})
@@ -119,7 +161,7 @@ def send_message(message, chatbot):
         return chatbot, "请输入消息"
     
     if not current_session["conversation_id"]:
-        result = create_conversation()
+        result, empty_chatbot = create_conversation()
         if "已创建新对话" not in result:
             return chatbot, result
     
@@ -184,7 +226,7 @@ def send_message(message, chatbot):
                     # 存储图像信息
                     if "images" not in chatbot[-1]:
                         chatbot[-1]["images"] = []
-                    chatbot[-1]["images"].append({"url": full_url})
+                    chatbot[-1]["images"].append(content)  # 存储完整的图像信息，而不仅仅是URL
                     yield chatbot, ""
                 
             elif event_type == "error":
@@ -387,7 +429,7 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
         submit_btn.click(send_message, [msg, chatbot], [chatbot, status], queue=True)
         msg.submit(send_message, [msg, chatbot], [chatbot, status], queue=True)
         
-        new_chat_btn.click(create_conversation, [], [status,chatbot])
+        new_chat_btn.click(create_conversation, [], [status, chatbot])
         model_btn.click(update_model, [model_dropdown], [status])
         
         load_btn.click(select_conversation, [history_dropdown], [chatbot, status])
