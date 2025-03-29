@@ -51,7 +51,13 @@ def create_conversation():
         if response.status_code == 200:
             data = response.json()
             current_session["conversation_id"] = data["id"]
+            # 重置会话消息，但保留系统消息
             current_session["messages"] = []
+            # 如果后端返回了系统消息，则添加到会话中
+            if "messages" in data and len(data["messages"]) > 0:
+                first_msg = data["messages"][0]
+                if first_msg["role"] == "system":
+                    current_session["messages"].append(first_msg)
             return f"已创建新对话, ID: {data['id']}", []
         else:
             return f"创建对话失败: {response.text}", []
@@ -131,12 +137,21 @@ def select_conversation(conversation_id):
                                         full_url = img_info
                                     
                             
-                        formatted_messages.append(formatted_msg)
+                        # 添加到格式化消息列表
+                        # 如果是系统消息，同时添加到当前会话状态
+                        if formatted_msg["role"] == "system":
+                            current_session["messages"].append(formatted_msg)
+                        
+                        # 所有消息都添加到格式化消息列表，用于显示
+                        if formatted_msg["role"] != "system":  # 不在界面上显示系统消息
+                            formatted_messages.append(formatted_msg)
                     # 如果是旧的列表格式 [user_msg, assistant_msg]，则转换
                     elif isinstance(msg, list) and len(msg) == 2:
                         formatted_messages.append({"role": "user", "content": msg[0]})
+                        current_session["messages"].append({"role": "user", "content": msg[0]})
                         if msg[1] is not None:  # 确保有回复
                             formatted_messages.append({"role": "assistant", "content": msg[1]})
+                            current_session["messages"].append({"role": "assistant", "content": msg[1]})
                 
                 # 重建对话历史界面
                 logger.info(f"已加载对话，消息数: {len(formatted_messages)}")
@@ -166,11 +181,16 @@ def send_message(message, chatbot):
     chatbot.append({"role": "user", "content": message})
     yield chatbot, ""
     
-    # 构建消息请求
+    # 构建消息请求，包含所有历史消息
+    # 首先获取当前会话中的所有消息
+    all_messages = current_session["messages"].copy()
+    # 添加最新的用户消息
+    all_messages.append({"role": "user", "content": message})
+    
     request_data = {
         "conversation_id": current_session["conversation_id"],
         "model": current_session["selected_model"],
-        "messages": [{"role": "user", "content": message}]
+        "messages": all_messages
     }
     
     try:

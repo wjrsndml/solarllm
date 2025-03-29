@@ -19,12 +19,14 @@ from fastapi.staticfiles import StaticFiles
 from mlutil import predict_solar_params
 from aging_utils import predict_aging_curve, get_default_aging_params
 # 配置日志
+log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'api.log')
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    filename='api.log'
+    filename=log_path
 )
 logger = logging.getLogger(__name__)
+logger.info("===== 程序启动 =====") 
 # MCP客户端相关导入
 from contextlib import AsyncExitStack
 from mcp import ClientSession
@@ -684,7 +686,7 @@ async def create_conversation():
         "messages": [
             {
                 "role": "system",
-                "content": "欢迎讨论太阳能电池相关的问题，回答时除非用户指定语言，否则尽量使用中文进行回答。不要在你的回答中包含文件路径。"
+                "content": "欢迎讨论太阳能电池相关的问题，回答时除非用户指定语言，否则尽量使用中文进行回答。注意！一定不要在你的回答中包含文件路径。"
             }
         ]
     }
@@ -971,6 +973,6 @@ async def predict_aging(params: AgingPredictParams):
 if __name__ == "__main__":
     import uvicorn
     logger.info("正在启动服务器...")
-    logger.info("API 密钥:", os.getenv("DEEPSEEK_API_KEY")[:5] + "..." if os.getenv("DEEPSEEK_API_KEY") else "未设置")
+    logger.info("API 密钥: %s", os.getenv("DEEPSEEK_API_KEY")[:5] + "..." if os.getenv("DEEPSEEK_API_KEY") else "未设置")
     logger.info(f"MCP服务器地址: {MCP_SERVER_URL}")
     uvicorn.run(app, host="0.0.0.0", port=8000)
