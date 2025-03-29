@@ -8,6 +8,8 @@ from PIL import Image
 import io
 import logging
 import numpy as np
+import webutil
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -15,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 # 配置后端API地址
-API_BASE_URL = "http://localhost:8000/api"
+API_BASE_URL = f"http://{webutil.get_local_ip()}/api"
 
 # 存储当前会话状态
 current_session = {
@@ -119,11 +121,8 @@ def select_conversation(conversation_id):
                                         else:
                                             full_url = url_path
                                             
-                                        # 添加图片引用到内容中
-                                        img_label = img_info.get("label", f"图像 {i+1}")
-                                        img_ref = f"\n\n![{img_label}]({full_url})"
-                                        if img_ref not in formatted_msg["content"]:
-                                            formatted_msg["content"] += img_ref
+                                        
+
                                 # 如果直接是URL字符串
                                 elif isinstance(img_info, str):
                                     if not img_info.startswith(("http://", "https://")):
@@ -131,9 +130,6 @@ def select_conversation(conversation_id):
                                     else:
                                         full_url = img_info
                                     
-                                    img_ref = f"\n\n![图像 {i+1}]({full_url})"
-                                    if img_ref not in formatted_msg["content"]:
-                                        formatted_msg["content"] += img_ref
                             
                         formatted_messages.append(formatted_msg)
                     # 如果是旧的列表格式 [user_msg, assistant_msg]，则转换

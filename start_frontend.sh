@@ -65,7 +65,7 @@ fi
 
 # 启动前端服务
 echo -e "${GREEN}启动前端服务...${NC}"
-nohup $PYTHON_PATH run.py > frontend.log 2>&1 & echo $! > frontend.pid
+nohup $PYTHON_PATH app.py > frontend.log 2>&1 & echo $! > frontend.pid
 FRONTEND_PID=$(cat frontend.pid)
 
 # 等待前端服务启动

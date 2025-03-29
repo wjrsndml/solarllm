@@ -71,7 +71,7 @@ fi
 
 # 启动后端服务
 echo -e "${GREEN}启动后端服务...${NC}"
-nohup $PYTHON_PATH main.py > backend.log 2>&1 & echo $! > backend.pid
+nohup $PYTHON_PATH main.py & echo $! > backend.pid
 BACKEND_PID=$(cat backend.pid)
 
 # 等待后端服务启动
