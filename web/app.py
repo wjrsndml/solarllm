@@ -1072,6 +1072,146 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
             show_progress=False
         )
 
+    # +++++ 新增钙钛矿带隙预测 Tab +++++
+    with gr.Tab("钙钛矿带隙预测"):
+        gr.Markdown("## 钙钛矿带隙预测")
+        gr.Markdown("根据选择的钙钛矿类型和对应的组分比例，预测材料的带隙。")
+
+        with gr.Row():
+            with gr.Column(scale=1):
+                perovskite_type_bandgap = gr.Dropdown(
+                    choices=["MAPbIBr", "CsMAFAPbIBr", "MAFA", "CsFA"],
+                    label="选择钙钛矿类型",
+                    value="MAPbIBr",
+                    interactive=True
+                )
+
+                # --- 输入参数区域 ---
+                # MAPbIBr 参数组
+                with gr.Group(visible=True) as mapbi_group:
+                    Br_percentage_bg = gr.Slider(minimum=0, maximum=1, step=0.01, value=0.5, label="Br 百分比 (0-1)", interactive=True)
+
+                # CsMAFAPbIBr 参数组
+                with gr.Group(visible=False) as csmafa_group:
+                    gr.Markdown("请输入 Cs, FA, I 的比例 (请确保 Cs+MA+FA=1, I+Br=1，这里仅需输入 Cs, FA, I 比例)")
+                    Cs_ratio_bg = gr.Slider(minimum=0, maximum=1, step=0.01, value=0.1, label="Cs 比例 (0-1)", interactive=True)
+                    FA_ratio_bg = gr.Slider(minimum=0, maximum=1, step=0.01, value=0.8, label="FA 比例 (0-1)", interactive=True)
+                    I_ratio_bg = gr.Slider(minimum=0, maximum=1, step=0.01, value=0.9, label="I 比例 (0-1)", interactive=True)
+
+                # MAFA 参数组
+                with gr.Group(visible=False) as mafa_group:
+                    gr.Markdown("请输入 MA 和 I 的比例 (请确保 MA+FA=1, I+Br=1，这里仅需输入 MA, I 比例)")
+                    MA_ratio_bg = gr.Slider(minimum=0, maximum=1, step=0.01, value=0.5, label="MA 比例 (0-1)", interactive=True)
+                    I_ratio_mafa_bg = gr.Slider(minimum=0, maximum=1, step=0.01, value=0.8, label="I 比例 (0-1)", interactive=True)
+
+                # CsFA 参数组
+                with gr.Group(visible=False) as csfa_group:
+                    gr.Markdown("请输入 Cs 和 I 的比例 (请确保 Cs+FA=1, I+Br=1，这里仅需输入 Cs, I 比例)")
+                    Cs_ratio_csfa_bg = gr.Slider(minimum=0, maximum=1, step=0.01, value=0.2, label="Cs 比例 (0-1)", interactive=True)
+                    I_ratio_csfa_bg = gr.Slider(minimum=0, maximum=1, step=0.01, value=0.7, label="I 比例 (0-1)", interactive=True)
+
+            with gr.Column(scale=1):
+                predict_bandgap_btn = gr.Button("预测带隙", variant="primary")
+                bandgap_result_text = gr.Textbox(label="预测结果", interactive=False)
+                bandgap_status_text = gr.Markdown("_状态: 就绪_")
+
+        # --- 处理函数 ---
+        def update_bandgap_inputs_visibility(perovskite_type):
+            """根据选择的钙钛矿类型更新输入控件的可见性"""
+            visibility_updates = {
+                mapbi_group: gr.update(visible=(perovskite_type == "MAPbIBr")),
+                csmafa_group: gr.update(visible=(perovskite_type == "CsMAFAPbIBr")),
+                mafa_group: gr.update(visible=(perovskite_type == "MAFA")),
+                csfa_group: gr.update(visible=(perovskite_type == "CsFA")),
+            }
+            return visibility_updates
+
+        def predict_perovskite_bandgap_wrapper(perovskite_type, br_perc, cs_r, fa_r, i_r_csm, ma_r, i_r_mafa, cs_r_csfa, i_r_csfa):
+            """调用后端API进行带隙预测"""
+            bandgap_status_text.value = "_状态: 计算中..._" # 直接更新状态以提供即时反馈
+            payload = {"perovskite_type": perovskite_type}
+            try:
+                # 根据类型构建payload
+                if perovskite_type == "MAPbIBr":
+                    payload["Br_percentage"] = float(br_perc)
+                elif perovskite_type == "CsMAFAPbIBr":
+                    payload["Cs_ratio"] = float(cs_r)
+                    payload["FA_ratio"] = float(fa_r)
+                    payload["I_ratio"] = float(i_r_csm)
+                elif perovskite_type == "MAFA":
+                    payload["MA_ratio"] = float(ma_r)
+                    payload["I_ratio"] = float(i_r_mafa)
+                elif perovskite_type == "CsFA":
+                    payload["Cs_ratio"] = float(cs_r_csfa)
+                    payload["I_ratio"] = float(i_r_csfa)
+                else:
+                    return "无效的钙钛矿类型", "_状态: 错误_"
+
+                api_url = f"{API_BASE_URL}/perovskite/predict-bandgap"
+                logger.info(f"向 {api_url} 发送请求, payload: {payload}") # 添加日志
+                response = requests.post(api_url, json=payload)
+                response.raise_for_status() # 对 >= 400 的状态码抛出异常
+
+                data = response.json()
+                logger.info(f"收到响应: {data}") # 添加日志
+
+                if "bandgap" in data:
+                    result = f"预测带隙: {data['bandgap']:.4f} eV"
+                    status = "_状态: 完成_"
+                elif "detail" in data: # 处理FastAPI验证错误等
+                    try:
+                        detail_info = data['detail']
+                        if isinstance(detail_info, list) and len(detail_info) > 0 and isinstance(detail_info[0], dict) and 'msg' in detail_info[0]:
+                            error_summary = detail_info[0]['msg']
+                        elif isinstance(detail_info, str):
+                             error_summary = detail_info
+                        else:
+                            error_summary = str(detail_info)
+                        result = f"预测失败 (输入错误): {error_summary}"
+                    except Exception:
+                        result = f"预测失败: {str(data.get('detail', '未知错误'))}"
+                    status = "_状态: 输入错误_"
+                else:
+                    result = f"预测失败: {response.text}"
+                    status = "_状态: 错误_"
+
+                return result, status # 返回值给Gradio输出组件
+
+            except requests.exceptions.RequestException as e:
+                error_msg = f"API 请求失败: {str(e)}"
+                logger.error(f"Bandgap API request error: {e}", exc_info=True)
+                return error_msg, "_状态: API错误_"
+            except Exception as e:
+                error_msg = f"处理预测时出错: {str(e)}"
+                logger.error(f"Bandgap prediction error: {e}", exc_info=True)
+                return error_msg, "_状态: 内部错误_"
+
+        # --- 绑定事件 ---
+        # 类型选择变化时，更新输入控件的可见性
+        perovskite_type_bandgap.change(
+            fn=update_bandgap_inputs_visibility,
+            inputs=[perovskite_type_bandgap],
+            outputs=[mapbi_group, csmafa_group, mafa_group, csfa_group], # 需要列出所有可能变化的Group
+            queue=True
+        )
+
+        # 点击预测按钮时，调用预测函数
+        # 注意：inputs列表需要包含所有可能用到的输入控件，顺序要和函数参数一致
+        all_bg_inputs = [
+            perovskite_type_bandgap,
+            Br_percentage_bg,
+            Cs_ratio_bg, FA_ratio_bg, I_ratio_bg,
+            MA_ratio_bg, I_ratio_mafa_bg,
+            Cs_ratio_csfa_bg, I_ratio_csfa_bg
+        ]
+        predict_bandgap_btn.click(
+            fn=predict_perovskite_bandgap_wrapper,
+            inputs=all_bg_inputs,
+            outputs=[bandgap_result_text, bandgap_status_text], # 更新结果文本框和状态
+            queue=True
+        )
+    # +++++ 结束新增Tab +++++
+
 # 运行应用
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=5173) 
