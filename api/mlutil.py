@@ -103,7 +103,7 @@ def predict_solar_params(input_params: Dict[str, float]) -> Tuple[Dict[str, floa
     
     return predictions, fig
 
-def predict_perovskite_params(input_params: Dict[str, float], perovskite_type: str = 'narrow') -> Tuple[Dict[str, float], plt.Figure]:
+def predict_perovskite_params_ml(input_params: Dict[str, float], perovskite_type: str = 'narrow') -> Tuple[Dict[str, float], plt.Figure]:
     """
     使用训练好的模型预测钙钛矿太阳能电池参数并绘制JV曲线
     
@@ -249,7 +249,7 @@ if __name__ == "__main__":
     import time
     start_time = time.time()
     # 预测窄带隙钙钛矿并获取结果
-    psk_predictions, psk_fig = predict_perovskite_params(perovskite_params, 'narrow')
+    psk_predictions, psk_fig = predict_perovskite_params_ml(perovskite_params, 'narrow')
     end_time = time.time()
     print(f"钙钛矿预测时间: {end_time - start_time} 秒")
 

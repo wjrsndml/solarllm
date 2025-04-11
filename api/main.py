@@ -16,7 +16,7 @@ import io
 from matplotlib.figure import Figure
 import logging
 from fastapi.staticfiles import StaticFiles
-from mlutil import predict_solar_params
+from mlutil import predict_solar_params,predict_perovskite_params_ml
 from aging_utils import predict_aging_curve, get_default_aging_params
 # 配置日志
 log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'api.log')
@@ -1009,6 +1009,7 @@ class PerovskiteParams(BaseModel):
     Cap_area: float
     Dit_top_HTL_PSK: float
     Dit_top_ETL_PSK: float
+    perovskite_type: str
 
 # 获取钙钛矿默认参数
 @app.get("/api/perovskite/default-params")
@@ -1057,8 +1058,9 @@ async def get_perovskite_default_params():
     return default_params
 
 @app.post("/api/perovskite/predict")
-async def predict_perovskite_params(params: PerovskiteParams, perovskite_type: str ):
+async def predict_perovskite_params(params: PerovskiteParams ):
     try:
+        perovskite_type=params.perovskite_type
         # 验证钙钛矿类型
         if perovskite_type.lower() not in ['narrow', 'wide']:
             raise HTTPException(status_code=400, detail="钙钛矿类型必须是'narrow'或'wide'")
@@ -1107,9 +1109,9 @@ async def predict_perovskite_params(params: PerovskiteParams, perovskite_type: s
         }
         
         # 从mlutil导入的predict_perovskite_params函数进行预测
-        from api.mlutil import predict_perovskite_params
-        predictions, fig = predict_perovskite_params(input_params, perovskite_type)
-        
+
+        predictions, fig = predict_perovskite_params_ml(input_params, perovskite_type)
+        logger.info(f"预测结果: {predictions}")
         # 将图像转换为base64编码
         buf = io.BytesIO()
         fig.savefig(buf, format='png')
