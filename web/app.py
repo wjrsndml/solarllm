@@ -202,6 +202,8 @@ def send_message(message, chatbot):
         current_reasoning = ""
         context_info = []
         image_info = []
+        buffer_size = 0
+        update_threshold = 50  # 每累积50个字符更新一次界面
         
         # 添加一个空的助手消息作为占位符
         chatbot.append({"role": "assistant", "content": ""})
@@ -213,23 +215,28 @@ def send_message(message, chatbot):
             if event_type == "content":
                 # 更新对话内容
                 assistant_response += content
-                chatbot[-1]["content"] = assistant_response
-                yield chatbot, ""
+                buffer_size += len(content)
+                
+                # 只有当累积的内容超过阈值，或者是重要事件时才更新UI
+                if buffer_size >= update_threshold or content.strip().endswith((".", "!", "?", ":", "\n", "。", "！", "？", "：", "\n\n")):
+                    chatbot[-1]["content"] = assistant_response
+                    buffer_size = 0  # 重置缓冲区大小
+                    yield chatbot, ""
             
             elif event_type == "reasoning":
                 # 收集推理过程
                 current_reasoning += content
-                # 可以选择将推理过程存储在消息的额外字段中
+                # 可以选择将推理过程存储在消息的额外字段中，但不触发UI更新
                 chatbot[-1]["reasoning"] = current_reasoning
                 
             elif event_type == "context":
                 # 保存上下文信息
                 context_info = content
-                # 可以选择将上下文信息存储在消息的额外字段中
+                # 可以选择将上下文信息存储在消息的额外字段中，但不触发UI更新
                 chatbot[-1]["context"] = context_info
                 
             elif event_type == "image":
-                # 处理图像信息
+                # 处理图像信息，这是重要事件，需要更新UI
                 image_info.append(content)
                 # 从content中获取图像URL路径
                 url_path = content.get("url_path", "")
@@ -244,6 +251,7 @@ def send_message(message, chatbot):
                     if "images" not in chatbot[-1]:
                         chatbot[-1]["images"] = []
                     chatbot[-1]["images"].append(content)  # 存储完整的图像信息，而不仅仅是URL
+                    buffer_size = 0  # 重置缓冲区
                     yield chatbot, ""
                 
             elif event_type == "error":
@@ -253,6 +261,9 @@ def send_message(message, chatbot):
                 break
                 
             elif event_type == "done":
+                # 完成时确保最终内容已更新到UI
+                chatbot[-1]["content"] = assistant_response
+                yield chatbot, ""
                 break
         
         # 保存完整对话到会话历史
@@ -264,6 +275,8 @@ def send_message(message, chatbot):
             "images": image_info if image_info else None
         })
         
+        # 确保最终状态已更新
+        chatbot[-1]["content"] = assistant_response
         yield chatbot, ""
         
     except Exception as e:
@@ -807,7 +820,7 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft()) as demo:
                 ('Stability_atmosphere', '稳定性气氛', 4, 1, 10, 1),
                 ('Stability_relative_humidity_average_value', '稳定性相对湿度平均值 (%)', 0, 0, 100, 1),
             ],
-        }
+        ]
         
         # 使用手风琴组件分组显示参数
         with gr.Accordion("参数设置", open=True):
