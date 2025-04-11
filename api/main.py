@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
-from pydantic import BaseModel
-from typing import List, Dict, Optional, Tuple, Any
+from pydantic import BaseModel, Field
+from typing import List, Dict, Optional, Tuple, Any, Literal
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
@@ -33,6 +33,7 @@ from mcp import ClientSession
 from mcp.client.sse import sse_client
 import torch
 import torch.nn as nn
+import numpy as np
 
 class CurvePredictor(nn.Module):
     def __init__(self, input_size, hidden_sizes, output_size, activation, l1_lambda, l2_lambda):
@@ -788,7 +789,6 @@ async def get_default_params():
     }
     return default_params
 
-# 太阳能电池参数预测，通过主流程中的工具调用已覆盖，此处保留API兼容性
 @app.post("/api/solar/predict")
 async def predict_params(params: SolarParams):
     try:
@@ -968,6 +968,330 @@ async def predict_aging(params: AgingPredictParams):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+# 钙钛矿太阳能电池参数模型
+class PerovskiteParams(BaseModel):
+    er_HTL_top: float
+    x_HTL_top: float
+    Eg_HTL_top: float
+    Nc_HTL_top: float
+    Nv_HTL_top: float
+    mun_HTL_top: float
+    mup_HTL_top: float
+    tn_HTL_top: float
+    tp_HTL_top: float
+    er_ETL_top: float
+    x_ETL_top: float
+    Eg_ETL_top: float
+    Nc_ETL_top: float
+    Nv_ETL_top: float
+    mun_ETL_top: float
+    mup_ETL_top: float
+    tn_ETL_top: float
+    tp_ETL_top: float
+    er_PSK_top: float
+    x_PSK_top: float
+    Nc_PSK_top: float
+    Nv_PSK_top: float
+    mun_PSK_top: float
+    mup_PSK_top: float
+    tn_PSK_top: float
+    tp_PSK_top: float
+    Eg_PSK_top: float
+    t_HTL_top: float
+    t_PSK_top: float
+    t_ETL_top: float
+    Na_HTL_top: float
+    Nd_PSK_top: float
+    Nd_ETL_top: float
+    Nt_HTL_top: float
+    Nt_PSK_top: float
+    Nt_ETL_top: float
+    Cap_area: float
+    Dit_top_HTL_PSK: float
+    Dit_top_ETL_PSK: float
+
+# 获取钙钛矿默认参数
+@app.get("/api/perovskite/default-params")
+async def get_perovskite_default_params():
+    default_params = {
+        'er_HTL_top': 3.5,
+        'x_HTL_top': 2.8,
+        'Eg_HTL_top': 2.7,
+        'Nc_HTL_top': 1.00E+20,
+        'Nv_HTL_top': 1.00E+20,
+        'mun_HTL_top': 1.00E-05,
+        'mup_HTL_top': 0.001,
+        'tn_HTL_top': 1.00E-06,
+        'tp_HTL_top': 1.00E-06,
+        'er_ETL_top': 6.1,
+        'x_ETL_top': 4.4,
+        'Eg_ETL_top': 2.2,
+        'Nc_ETL_top': 2.20E+18,
+        'Nv_ETL_top': 1.80E+19,
+        'mun_ETL_top': 720,
+        'mup_ETL_top': 75,
+        'tn_ETL_top': 1.00E-07,
+        'tp_ETL_top': 1.00E-07,
+        'er_PSK_top': 6.5,
+        'x_PSK_top': 4.17,
+        'Nc_PSK_top': 1.00E+17,
+        'Nv_PSK_top': 1.00E+17,
+        'mun_PSK_top': 20,
+        'mup_PSK_top': 20,
+        'tn_PSK_top': 1.00E-07,
+        'tp_PSK_top': 1.00E-07,
+        'Eg_PSK_top': 1.38,
+        't_HTL_top': 0.02,
+        't_PSK_top': 0.9,
+        't_ETL_top': 0.076,
+        'Na_HTL_top': 5.80E+18,
+        'Nd_PSK_top': 1.33E+16,
+        'Nd_ETL_top': 5.86E+19,
+        'Nt_HTL_top': 7.39E+15,
+        'Nt_PSK_top': 2.56E+13,
+        'Nt_ETL_top': 1.31E+15,
+        'Cap_area': 1.55E-17,
+        'Dit_top_HTL_PSK': 37500000000,
+        'Dit_top_ETL_PSK': 2.77E+12
+    }
+    return default_params
+
+@app.post("/api/perovskite/predict")
+async def predict_perovskite_params(params: PerovskiteParams, perovskite_type: str ):
+    try:
+        # 验证钙钛矿类型
+        if perovskite_type.lower() not in ['narrow', 'wide']:
+            raise HTTPException(status_code=400, detail="钙钛矿类型必须是'narrow'或'wide'")
+        
+        # 将参数转为字典
+        input_params = {
+            'er_HTL_top': params.er_HTL_top,
+            'x_HTL_top': params.x_HTL_top,
+            'Eg_HTL_top': params.Eg_HTL_top,
+            'Nc_HTL_top': params.Nc_HTL_top,
+            'Nv_HTL_top': params.Nv_HTL_top,
+            'mun_HTL_top': params.mun_HTL_top,
+            'mup_HTL_top': params.mup_HTL_top,
+            'tn_HTL_top': params.tn_HTL_top,
+            'tp_HTL_top': params.tp_HTL_top,
+            'er_ETL_top': params.er_ETL_top,
+            'x_ETL_top': params.x_ETL_top,
+            'Eg_ETL_top': params.Eg_ETL_top,
+            'Nc_ETL_top': params.Nc_ETL_top,
+            'Nv_ETL_top': params.Nv_ETL_top,
+            'mun_ETL_top': params.mun_ETL_top,
+            'mup_ETL_top': params.mup_ETL_top,
+            'tn_ETL_top': params.tn_ETL_top,
+            'tp_ETL_top': params.tp_ETL_top,
+            'er_PSK_top': params.er_PSK_top,
+            'x_PSK_top': params.x_PSK_top,
+            'Nc_PSK_top': params.Nc_PSK_top,
+            'Nv_PSK_top': params.Nv_PSK_top,
+            'mun_PSK_top': params.mun_PSK_top,
+            'mup_PSK_top': params.mup_PSK_top,
+            'tn_PSK_top': params.tn_PSK_top,
+            'tp_PSK_top': params.tp_PSK_top,
+            'Eg_PSK_top': params.Eg_PSK_top,
+            't_HTL_top': params.t_HTL_top,
+            't_PSK_top': params.t_PSK_top,
+            't_ETL_top': params.t_ETL_top,
+            'Na_HTL_top': params.Na_HTL_top,
+            'Nd_PSK_top': params.Nd_PSK_top,
+            'Nd_ETL_top': params.Nd_ETL_top,
+            'Nt_HTL_top': params.Nt_HTL_top,
+            'Nt_PSK_top': params.Nt_PSK_top,
+            'Nt_ETL_top': params.Nt_ETL_top,
+            'Cap_area': params.Cap_area,
+            'Dit_top_HTL_PSK': params.Dit_top_HTL_PSK,
+            'Dit_top_ETL_PSK': params.Dit_top_ETL_PSK
+        }
+        
+        # 从mlutil导入的predict_perovskite_params函数进行预测
+        from api.mlutil import predict_perovskite_params
+        predictions, fig = predict_perovskite_params(input_params, perovskite_type)
+        
+        # 将图像转换为base64编码
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png')
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        
+        # 返回预测结果和图像
+        return {
+            "predictions": predictions,
+            "jv_curve": img_base64,
+            "perovskite_type": perovskite_type
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 钙钛矿带隙预测模型
+class BandgapPredictionParams(BaseModel):
+    perovskite_type: Literal["MAPbIBr", "CsMAFAPbIBr", "MAFA", "CsFA"] = Field(..., description="钙钛矿类型")
+    
+    # MAPbIBr 参数
+    Br_percentage: Optional[float] = Field(None, ge=0, le=1, description="Br百分比 (0-1), 仅用于MAPbIBr")
+    
+    # CsMAFAPbIBr 参数
+    Cs_ratio: Optional[float] = Field(None, ge=0, le=1, description="Cs比例 (0-1), 用于CsMAFAPbIBr和CsFA")
+    FA_ratio: Optional[float] = Field(None, ge=0, le=1, description="FA比例 (0-1), 用于CsMAFAPbIBr和MAFA")
+    I_ratio: Optional[float] = Field(None, ge=0, le=1, description="I比例 (0-1), 用于多种类型")
+    
+    # MAFA 参数
+    MA_ratio: Optional[float] = Field(None, ge=0, le=1, description="MA比例 (0-1), 用于MAFA")
+
+# 预测钙钛矿材料带隙
+@app.post("/api/perovskite/predict-bandgap")
+async def predict_perovskite_bandgap(params: BandgapPredictionParams):
+    try:
+        if params.perovskite_type == "MAPbIBr":
+            if params.Br_percentage is None:
+                raise HTTPException(status_code=400, detail="MAPbIBr类型需要提供Br_percentage参数")
+            
+            # 计算MAPbIBr的带隙
+            bandgap = 1.565 + 0.15 * params.Br_percentage
+            
+            return {
+                "bandgap": bandgap,
+                "unit": "eV",
+                "formula": "1.565 + 0.15 * Br_percentage"
+            }
+            
+        elif params.perovskite_type == "CsMAFAPbIBr":
+            if any(p is None for p in [params.Cs_ratio, params.FA_ratio, params.I_ratio]):
+                raise HTTPException(status_code=400, detail="CsMAFAPbIBr类型需要提供Cs_ratio, FA_ratio和I_ratio参数")
+            
+            # CsMAFAPbIBr系数
+            coefficients = np.array([0.00000000e+00, 1.85103066e+01, -5.67081558e+00, 3.26564185e-01,
+                                    -8.29277827e+01, -9.20817024e+00, -6.70094406e+00, 2.85323968e+00,
+                                    4.00960394e+00, -1.94235432e-01, 3.23777507e+01, -2.17075962e+00,
+                                    2.43646256e+01, -1.61156004e+00, 4.36068310e+00, 2.40287403e-01,
+                                    -1.08276395e+00, -6.04079873e-01, -7.64009588e-01, 3.49371493e-02])
+            intercept = 1.4053637187538268
+            
+            # 制作特征向量
+            x = np.array([params.Cs_ratio, params.FA_ratio, params.I_ratio])
+            
+            # 多项式特征展开 (3次多项式)
+            poly_features = []
+            for i in range(4):  # 度数从0到3
+                if i == 0:
+                    poly_features.append(1)  # 常数项
+                else:
+                    for j in range(len(x)**i):
+                        indices = np.unravel_index(j, tuple([len(x)] * i))
+                        term = np.prod([x[idx] for idx in indices])
+                        poly_features.append(term)
+            
+            # 裁剪到对应系数长度
+            poly_features = np.array(poly_features[:len(coefficients)])
+            
+            # 预测带隙
+            bandgap = np.dot(coefficients, poly_features) + intercept
+            
+            return {
+                "bandgap": float(bandgap),
+                "unit": "eV",
+                "model_metrics": {
+                    "degree": 3,
+                    "standard_error": 0.03,
+                    "R2_1": 0.59,
+                    "R2_2": 0.36
+                }
+            }
+            
+        elif params.perovskite_type == "MAFA":
+            if any(p is None for p in [params.MA_ratio, params.I_ratio]):
+                raise HTTPException(status_code=400, detail="MAFA类型需要提供MA_ratio和I_ratio参数")
+            
+            # MAFA系数
+            coefficients = np.array([6.67041914e-09, 1.80035243e+02, -4.12649518e+01, 5.81805141e+01,
+                                    1.50772432e+02, -1.51313184e+01, 7.31982621e+01, -1.45092632e+01,
+                                    3.48092947e+01, 9.27160558e+01, 4.33999570e+01, 6.27801418e+01,
+                                    -1.47514433e+02, -1.06362220e+02, -4.30021694e+01, -1.54381644e+01,
+                                    4.98614404e+01, -5.15784751e+01, 5.32769966e+01, 2.36684346e+01,
+                                    5.60752291e+00])
+            intercept = -121.17914592495342
+            
+            # 制作特征向量
+            x = np.array([params.MA_ratio, params.I_ratio])
+            
+            # 多项式特征展开 (5次多项式)
+            poly_features = []
+            for i in range(6):  # 度数从0到5
+                if i == 0:
+                    poly_features.append(1)  # 常数项
+                else:
+                    for j in range(len(x)**i):
+                        indices = np.unravel_index(j, tuple([len(x)] * i))
+                        term = np.prod([x[idx] for idx in indices])
+                        poly_features.append(term)
+            
+            # 裁剪到对应系数长度
+            poly_features = np.array(poly_features[:len(coefficients)])
+            
+            # 预测带隙
+            bandgap = np.dot(coefficients, poly_features) + intercept
+            
+            return {
+                "bandgap": float(bandgap),
+                "unit": "eV",
+                "model_metrics": {
+                    "degree": 5,
+                    "standard_error": 0.03,
+                    "R2_1": 0.76,
+                    "R2_2": 0.51
+                }
+            }
+            
+        elif params.perovskite_type == "CsFA":
+            if any(p is None for p in [params.Cs_ratio, params.I_ratio]):
+                raise HTTPException(status_code=400, detail="CsFA类型需要提供Cs_ratio和I_ratio参数")
+            
+            # CsFA系数
+            coefficients = np.array([0.00000000e+00, 1.28022233e+04, 1.45111610e+03, -7.40110126e+03,
+                                    -2.07915040e+04, -4.24724412e+02, -5.40241551e+03, 1.11307802e+04,
+                                    1.23925881e+04, -1.40613786e+02, -2.75876681e+02, 4.50375583e+03,
+                                    -5.35781276e+03, -3.21086901e+03, 9.14203208e+01, 1.01612857e+02,
+                                    1.03191599e+02, -9.50461745e+02, 8.37296821e+02, 3.04467837e+02,
+                                    -1.23098003e+01])
+            intercept = -1143.8520505192823
+            
+            # 制作特征向量
+            x = np.array([params.Cs_ratio, params.I_ratio])
+            
+            # 多项式特征展开 (5次多项式)
+            poly_features = []
+            for i in range(6):  # 度数从0到5
+                if i == 0:
+                    poly_features.append(1)  # 常数项
+                else:
+                    for j in range(len(x)**i):
+                        indices = np.unravel_index(j, tuple([len(x)] * i))
+                        term = np.prod([x[idx] for idx in indices])
+                        poly_features.append(term)
+            
+            # 裁剪到对应系数长度
+            poly_features = np.array(poly_features[:len(coefficients)])
+            
+            # 预测带隙
+            bandgap = np.dot(coefficients, poly_features) + intercept
+            
+            return {
+                "bandgap": float(bandgap),
+                "unit": "eV",
+                "model_metrics": {
+                    "degree": 5,
+                    "standard_error": 0.04,
+                    "R2_1": 0.73,
+                    "R2_2": 0.48
+                }
+            }
+        else:
+            raise HTTPException(status_code=400, detail="不支持的钙钛矿类型")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # 直接运行入口点
 if __name__ == "__main__":
