@@ -1,22 +1,6 @@
 import gradio as gr
 from api.perovskite import load_default_perovskite_params, call_perovskite_predict_api, debounced_predict
-
-def build_perovskite_tab():
-    with gr.Tab("钙钛矿电池参数预测"):
-        default_perovskite_params = load_default_perovskite_params()
-        with gr.Row():
-            with gr.Column(scale=2):
-                perovskite_jv_curve = gr.Image(label="钙钛矿JV曲线", height=350)
-            with gr.Column(scale=1):
-                perovskite_result_text = gr.Textbox(label="预测结果", lines=10)
-                perovskite_loading_indicator = gr.Markdown("_仿真状态: 就绪_")
-        perovskite_type_radio = gr.Radio(
-            ["narrow", "wide"],
-            label="钙钛矿类型",
-            value="narrow",
-            info="选择窄带隙或宽带隙模型"
-        )
-        perovskite_param_definitions = {
+perovskite_param_definitions = {
             'er_HTL_top': ('HTL相对介电常数', 1, 10, 0.1),
             'x_HTL_top': ('HTL电子亲和能 (eV)', 1, 5, 0.1),
             'Eg_HTL_top': ('HTL带隙 (eV)', 1, 5, 0.1),
@@ -57,6 +41,22 @@ def build_perovskite_tab():
             'Dit_top_HTL_PSK': ('HTL/PSK界面缺陷密度 (cm^-2)', 1e8, 1e14, 1e8),
             'Dit_top_ETL_PSK': ('ETL/PSK界面缺陷密度 (cm^-2)', 1e10, 1e15, 1e10)
         }
+def build_perovskite_tab():
+    with gr.Tab("钙钛矿电池参数预测"):
+        default_perovskite_params = load_default_perovskite_params()
+        with gr.Row():
+            with gr.Column(scale=2):
+                perovskite_jv_curve = gr.Image(label="钙钛矿JV曲线", height=350)
+            with gr.Column(scale=1):
+                perovskite_result_text = gr.Textbox(label="预测结果", lines=10)
+                perovskite_loading_indicator = gr.Markdown("_仿真状态: 就绪_")
+        perovskite_type_radio = gr.Radio(
+            ["narrow", "wide"],
+            label="钙钛矿类型",
+            value="narrow",
+            info="选择窄带隙或宽带隙模型"
+        )
+
         perovskite_input_controls = {}
         perovskite_input_displays = {}
         num_params = len(perovskite_param_definitions)

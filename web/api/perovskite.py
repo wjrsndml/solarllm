@@ -22,8 +22,8 @@ def call_perovskite_predict_api(perovskite_type, *args):
     try:
         # 这里的参数顺序需与ui/perovskite.py控件顺序一致
         # 需要获取参数名列表
-        from ui.perovskite import build_perovskite_tab
-        param_names = list(build_perovskite_tab.perovskite_param_definitions.keys())
+        from ui.perovskite import perovskite_param_definitions
+        param_names = list(perovskite_param_definitions.keys())
         params_dict = {name: float(value) for name, value in zip(param_names, args)}
         params_dict['perovskite_type'] = perovskite_type
         api_url = f"{API_BASE_URL}/perovskite/predict"
