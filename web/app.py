@@ -22,9 +22,9 @@ with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft(primary_hue="blue
     tech_header()
     with gr.Tab("💬 AI对话"):
         build_chat_tab()
-    with gr.Tab("⚡ 太阳能电池参数预测"):
+    with gr.Tab("⚡ 硅电池参数预测"):
         build_solar_tab()
-    with gr.Tab("⏳ 太阳能电池老化预测"):
+    with gr.Tab("⏳ 钙钛矿电池老化预测"):
         build_aging_tab()
     with gr.Tab("🧪 钙钛矿电池参数预测"):
         build_perovskite_tab()
