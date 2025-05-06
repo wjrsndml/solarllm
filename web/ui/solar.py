@@ -6,11 +6,11 @@ def build_solar_tab():
     with gr.Tab("太阳能电池参数预测"):
         default_params = load_default_solar_params()
         with gr.Row():
-            with gr.Column(scale=1):
-                # 3D模型展示
-                gr.Markdown("### TOPCon 电池结构3D模型")
-                model3d_path = os.path.abspath("/home/gqh/code/project/solarllm/TOPCon.glb")
-                gr.Model3D(model3d_path, label="TOPCon 结构")
+            # with gr.Column(scale=1):
+            #     # 3D模型展示
+            #     gr.Markdown("### TOPCon 电池结构3D模型")
+            #     model3d_path = os.path.abspath("/home/gqh/code/project/solarllm/TOPCon.glb")
+            #     gr.Model3D(model3d_path, label="TOPCon 结构")
             with gr.Column(scale=1):
                 jv_curve = gr.Image(label="JV曲线")
                 result_text = gr.Textbox(label="预测结果", lines=10)
