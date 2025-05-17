@@ -1,16 +1,27 @@
 import gradio as gr
 from api.aging import load_default_aging_params, predict_aging_curve, update_aging_params
 
+# Helper function to format values for gr.Number input
+def format_value_for_input(value):
+    """Format value for gr.Number input: scientific notation if >1e6 or |value|<1e-3 & !=0."""
+    if isinstance(value, (int, float)):
+        if value == 0:
+            return "0" 
+        if abs(value) > 1e6 or (abs(value) < 1e-3 and value != 0):
+            return f"{value:.2e}"
+    return str(value) # Ensure it's a string for gr.Number if not formatted
+
 def build_aging_tab():
-    with gr.Tab("太阳能电池老化预测"):
+    with gr.Tab("钙钛矿电池老化预测"): # Changed from "太阳能电池老化预测" to be more specific if appropriate
         default_aging_params = load_default_aging_params()
+        
         with gr.Row():
             with gr.Column(scale=2):
-                aging_curve = gr.Image(label="老化曲线", height=350)
+                aging_curve = gr.Image(label="老化曲线", height=400) # Increased height a bit
             with gr.Column(scale=1):
-                aging_result_text = gr.Textbox(label="预测结果", lines=10)
+                aging_result_text = gr.Textbox(label="预测结果", lines=15) # Increased lines
                 aging_loading_indicator = gr.Markdown("_老化预测状态: 就绪_")
-        # 参数名列表（可根据实际API调整）
+
         aging_param_names = [
             'Cell_architecture', 'Substrate_stack_sequence', 'Substrate_thickness',
             'ETL_stack_sequence', 'ETL_thickness', 'ETL_additives_compounds',
@@ -47,32 +58,96 @@ def build_aging_tab():
             'Stability_light_source_type', 'Stability_temperature_range',
             'Stability_atmosphere', 'Stability_relative_humidity_average_value'
         ]
+        
         aging_param_controls = []
-        for param in aging_param_names:
-            default_val = default_aging_params.get(param, 1)
-            control = gr.Slider(minimum=0, maximum=100, value=default_val, step=1, label=param)
-            aging_param_controls.append(control)
+        
+        with gr.Tabs():
+            num_params = len(aging_param_names)
+            params_per_tab = 10
+            for i in range(0, num_params, params_per_tab):
+                tab_label = f"参数组 {i//params_per_tab + 1}"
+                with gr.Tab(label=tab_label):
+                    with gr.Column(): # Use a column for vertical stacking within the tab
+                        current_params_batch = aging_param_names[i:i+params_per_tab]
+                        for param_name in current_params_batch:
+                            default_val = default_aging_params.get(param_name, "") # Default to empty string if not found or use 1 if that was intended
+                                                                                  # Using "" might be safer if some params are text
+                            
+                            # Attempt to convert default_val to float for formatting, if it's numerical
+                            try:
+                                numeric_default_val = float(default_val)
+                                formatted_default_val_str = format_value_for_input(numeric_default_val)
+                            except (ValueError, TypeError):
+                                # If default_val is not a number (e.g. a string like 'MAPbI3' or empty), use it as is.
+                                # format_value_for_input will also just return it as str.
+                                formatted_default_val_str = str(default_val)
+
+                            # Heuristic for step: if value is typically very small or large, adjust step.
+                            # This is a basic heuristic; specific parameters might need fine-tuning.
+                            current_step = 1 
+                            # try:
+                            #     val_for_step_check = float(formatted_default_val_str)
+                            #     if 0 < abs(val_for_step_check) < 1e-2:
+                            #         current_step = 1e-3  # Or smaller
+                            #     elif abs(val_for_step_check) > 1e3:
+                            #         current_step = 1e2 # Or larger
+                            # except ValueError:
+                            #     pass # Keep step=1 if not a number
+
+                            control = gr.Number(label=param_name, value=formatted_default_val_str, step=current_step)
+                            aging_param_controls.append(control)
+        
         predict_btn = gr.Button("进行老化预测", variant="primary")
+
         def predict_with_aging_status(*args):
             aging_loading_indicator.value = "_老化预测状态: 计算中..._"
+            
+            processed_args = []
+            for i, arg_val in enumerate(args):
+                # It's safer to assume that if an input was meant to be text, it should remain text.
+                # If it's from a gr.Number field, it should be a number or a string representation of one.
+                param_name = aging_param_names[i] # Get the param name to apply specific logic if needed
+                
+                if isinstance(arg_val, str):
+                    try:
+                        # Attempt to convert to float if it looks like a number (including scientific notation)
+                        processed_args.append(float(arg_val))
+                    except ValueError:
+                        # If conversion to float fails, it might be an intended string parameter
+                        # (e.g., 'Cell_architecture', 'ETL_stack_sequence').
+                        # Or it could be an invalid number input. The backend API should handle this.
+                        processed_args.append(arg_val) 
+                elif isinstance(arg_val, (int, float)):
+                    processed_args.append(arg_val)
+                else:
+                     processed_args.append(str(arg_val)) # Default to string if other type
+
             try:
-                params_dict = update_aging_params(*args)
+                # Ensure `update_aging_params` can correctly map these processed_args to param names
+                # This typically means update_aging_params takes *processed_args and zips with aging_param_names
+                # or it's called as update_aging_params(dict(zip(aging_param_names, processed_args)))
+                # For now, assuming update_aging_params(*args) correctly builds the dictionary.
+                params_dict = update_aging_params(*processed_args) # This function is in api.aging
+                
                 new_result_text, new_aging_curve = predict_aging_curve(params_dict)
                 aging_loading_indicator.value = "_老化预测状态: 完成_"
                 return new_result_text, new_aging_curve
             except Exception as e:
-                aging_loading_indicator.value = "_老化预测状态: 出错_"
+                aging_loading_indicator.value = f"_老化预测状态: 出错 ({type(e).__name__})_"
                 return f"预测出错: {str(e)}", None
+
         predict_btn.click(
             predict_with_aging_status,
-            aging_param_controls,
-            [aging_result_text, aging_curve],
+            inputs=aging_param_controls,
+            outputs=[aging_result_text, aging_curve],
             queue=True
         )
-        gr.Blocks().load(
+        
+
+        gr.Blocks().load(  # This creates an implicit new Blocks scope, which might not be what you want if build_aging_tab is nested.
             predict_with_aging_status,
-            aging_param_controls,
-            [aging_result_text, aging_curve],
+            inputs=aging_param_controls,
+            outputs=[aging_result_text, aging_curve],
             queue=True,
-            show_progress=False
-        ) 
+            show_progress="full" # Use "full" or "minimal"
+        )
