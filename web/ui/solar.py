@@ -11,8 +11,9 @@ def build_solar_tab():
             #     gr.Markdown("### TOPCon 电池结构3D模型")
             #     model3d_path = os.path.abspath("/home/gqh/code/project/solarllm/TOPCon.glb")
             #     gr.Model3D(model3d_path, label="TOPCon 结构")
-            with gr.Column(scale=1):
-                jv_curve = gr.Image(label="JV曲线")
+            # with gr.Column():
+            jv_curve = gr.Image(label="JV曲线")
+            with gr.Column():
                 result_text = gr.Textbox(label="预测结果", lines=10)
                 loading_indicator = gr.Markdown("_仿真状态: 就绪_")
         with gr.Row():
