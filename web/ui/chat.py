@@ -40,9 +40,16 @@ def build_chat_tab():
                 )
                 load_btn = gr.Button("加载对话")
                 refresh_btn = gr.Button("刷新列表")
+
+    # 创建包装函数来清空输入框
+    def send_and_clear(message, chatbot):
+        # 调用原始的send_message函数，它返回生成器
+        for chatbot_update, status_update in send_message(message, chatbot):
+            yield chatbot_update, status_update, ""  # 添加空字符串来清空输入框
+    
     # 绑定事件
-    submit_btn.click(send_message, [msg, chatbot], [chatbot, status], queue=True)
-    msg.submit(send_message, [msg, chatbot], [chatbot, status], queue=True)
+    submit_btn.click(send_and_clear, [msg, chatbot], [chatbot, status, msg], queue=True)
+    msg.submit(send_and_clear, [msg, chatbot], [chatbot, status, msg], queue=True)
     new_chat_btn.click(create_conversation, [], [status, chatbot])
     model_btn.click(update_model, [model_dropdown], [status])
     load_btn.click(select_conversation, [history_dropdown], [chatbot, status])

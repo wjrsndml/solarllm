@@ -2,7 +2,7 @@
 import os
 import base64
 import io
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, List, Tuple, Optional, Literal
 
 import numpy as np
 import pandas as pd
@@ -18,6 +18,11 @@ from mcp.server import Server
 import uvicorn
 from dotenv import load_dotenv
 from embed import TextEmbedding  # 导入嵌入模块
+# 导入钙钛矿预测相关模块
+from mlutil import predict_perovskite_params_ml
+from aging_utils import predict_aging_curve, get_default_aging_params
+import torch
+import torch.nn as nn
 load_dotenv()
 
 # 初始化FastMCP服务器
@@ -841,6 +846,644 @@ async def process_directory_for_embedding(
             "text": {
                 "status": "error",
                 "message": error_msg
+            }
+        }
+
+@mcp.tool()
+async def predict_perovskite_aging(
+    Cell_architecture: int = 1,
+    Substrate_stack_sequence: int = 10,
+    Substrate_thickness: int = 14,
+    ETL_stack_sequence: int = 39,
+    ETL_thickness: int = 78,
+    ETL_additives_compounds: int = 27,
+    ETL_deposition_procedure: int = 28,
+    ETL_deposition_synthesis_atmosphere: int = 12,
+    ETL_deposition_solvents: int = 18,
+    ETL_deposition_substrate_temperature: int = 8,
+    ETL_deposition_thermal_annealing_temperature: int = 27,
+    ETL_deposition_thermal_annealing_time: int = 19,
+    ETL_deposition_thermal_annealing_atmosphere: int = 10,
+    ETL_storage_atmosphere: int = 2,
+    Perovskite_dimension_0D: int = 0,
+    Perovskite_dimension_2D: int = 0,
+    Perovskite_dimension_2D3D_mixture: int = 0,
+    Perovskite_dimension_3D: int = 1,
+    Perovskite_dimension_3D_with_2D_capping_layer: int = 0,
+    Perovskite_composition_a_ions: int = 27,
+    Perovskite_composition_a_ions_coefficients: int = 16,
+    Perovskite_composition_b_ions: int = 7,
+    Perovskite_composition_b_ions_coefficients: int = 7,
+    Perovskite_composition_c_ions: int = 2,
+    Perovskite_composition_c_ions_coefficients: int = 35,
+    Perovskite_composition_inorganic: int = 0,
+    Perovskite_composition_leadfree: int = 0,
+    Perovskite_additives_compounds: int = 121,
+    Perovskite_thickness: int = 320,
+    Perovskite_band_gap: float = 1.6,
+    Perovskite_pl_max: int = 770,
+    Perovskite_deposition_number_of_deposition_steps: int = 1,
+    Perovskite_deposition_procedure: int = 12,
+    Perovskite_deposition_aggregation_state_of_reactants: int = 4,
+    Perovskite_deposition_synthesis_atmosphere: int = 13,
+    Perovskite_deposition_solvents: int = 35,
+    Perovskite_deposition_substrate_temperature: int = 5,
+    Perovskite_deposition_quenching_induced_crystallisation: int = 1,
+    Perovskite_deposition_quenching_media: int = 19,
+    Perovskite_deposition_quenching_media_volume: int = 9,
+    Perovskite_deposition_thermal_annealing_temperature: int = 0,
+    Perovskite_deposition_thermal_annealing_time: int = 21,
+    Perovskite_deposition_thermal_annealing_atmosphere: int = 7,
+    Perovskite_deposition_solvent_annealing: int = 0,
+    HTL_stack_sequence: int = 115,
+    HTL_thickness_list: int = 40,
+    HTL_additives_compounds: int = 50,
+    HTL_deposition_procedure: int = 16,
+    HTL_deposition_aggregation_state_of_reactants: int = 4,
+    HTL_deposition_synthesis_atmosphere: int = 8,
+    HTL_deposition_solvents: int = 8,
+    HTL_deposition_thermal_annealing_temperature: int = 13,
+    HTL_deposition_thermal_annealing_time: int = 9,
+    HTL_deposition_thermal_annealing_atmosphere: int = 8,
+    Backcontact_stack_sequence: int = 2,
+    Backcontact_thickness_list: int = 150,
+    Backcontact_deposition_procedure: int = 3,
+    Encapsulation: int = 0,
+    Encapsulation_stack_sequence: int = 19,
+    Encapsulation_edge_sealing_materials: int = 6,
+    Encapsulation_atmosphere_for_encapsulation: int = 4,
+    JV_default_Voc: float = 0.82,
+    JV_default_Jsc: float = 20.98,
+    JV_default_FF: float = 0.71,
+    JV_default_PCE: float = 12.29,
+    Stability_protocol: int = 1,
+    Stability_average_over_n_number_of_cells: int = 1,
+    Stability_light_intensity: int = 0,
+    Stability_light_spectra: int = 3,
+    Stability_light_UV_filter: int = 0,
+    Stability_potential_bias_load_condition: int = 2,
+    Stability_PCE_burn_in_observed: int = 0,
+    Stability_light_source_type: int = 0,
+    Stability_temperature_range: int = 25,
+    Stability_atmosphere: int = 4,
+    Stability_relative_humidity_average_value: int = 0,
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    预测钙钛矿太阳能电池的老化曲线
+    
+    这个工具使用机器学习模型预测钙钛矿太阳能电池在不同条件下的老化性能，
+    基于材料组成、制备工艺、封装条件和测试环境等参数。
+    
+    参数:
+    - Cell_architecture: 电池架构类型
+    - Substrate_stack_sequence: 基底堆叠序列
+    - Substrate_thickness: 基底厚度
+    - ETL_stack_sequence: 电子传输层堆叠序列
+    - ETL_thickness: 电子传输层厚度
+    - Perovskite_thickness: 钙钛矿层厚度
+    - Perovskite_band_gap: 钙钛矿带隙
+    - HTL_thickness_list: 空穴传输层厚度
+    - Stability_temperature_range: 稳定性测试温度范围
+    - 以及其他多个材料和工艺参数
+    
+    返回:
+    - 老化曲线数据和图像
+    - 时间-性能衰减关系
+    """
+    if ctx:
+        ctx.info("开始钙钛矿太阳能电池老化预测...")
+    
+    try:
+        # 构建参数字典
+        input_params = {
+            'Cell_architecture': Cell_architecture,
+            'Substrate_stack_sequence': Substrate_stack_sequence,
+            'Substrate_thickness': Substrate_thickness,
+            'ETL_stack_sequence': ETL_stack_sequence,
+            'ETL_thickness': ETL_thickness,
+            'ETL_additives_compounds': ETL_additives_compounds,
+            'ETL_deposition_procedure': ETL_deposition_procedure,
+            'ETL_deposition_synthesis_atmosphere': ETL_deposition_synthesis_atmosphere,
+            'ETL_deposition_solvents': ETL_deposition_solvents,
+            'ETL_deposition_substrate_temperature': ETL_deposition_substrate_temperature,
+            'ETL_deposition_thermal_annealing_temperature': ETL_deposition_thermal_annealing_temperature,
+            'ETL_deposition_thermal_annealing_time': ETL_deposition_thermal_annealing_time,
+            'ETL_deposition_thermal_annealing_atmosphere': ETL_deposition_thermal_annealing_atmosphere,
+            'ETL_storage_atmosphere': ETL_storage_atmosphere,
+            'Perovskite_dimension_0D': Perovskite_dimension_0D,
+            'Perovskite_dimension_2D': Perovskite_dimension_2D,
+            'Perovskite_dimension_2D3D_mixture': Perovskite_dimension_2D3D_mixture,
+            'Perovskite_dimension_3D': Perovskite_dimension_3D,
+            'Perovskite_dimension_3D_with_2D_capping_layer': Perovskite_dimension_3D_with_2D_capping_layer,
+            'Perovskite_composition_a_ions': Perovskite_composition_a_ions,
+            'Perovskite_composition_a_ions_coefficients': Perovskite_composition_a_ions_coefficients,
+            'Perovskite_composition_b_ions': Perovskite_composition_b_ions,
+            'Perovskite_composition_b_ions_coefficients': Perovskite_composition_b_ions_coefficients,
+            'Perovskite_composition_c_ions': Perovskite_composition_c_ions,
+            'Perovskite_composition_c_ions_coefficients': Perovskite_composition_c_ions_coefficients,
+            'Perovskite_composition_inorganic': Perovskite_composition_inorganic,
+            'Perovskite_composition_leadfree': Perovskite_composition_leadfree,
+            'Perovskite_additives_compounds': Perovskite_additives_compounds,
+            'Perovskite_thickness': Perovskite_thickness,
+            'Perovskite_band_gap': Perovskite_band_gap,
+            'Perovskite_pl_max': Perovskite_pl_max,
+            'Perovskite_deposition_number_of_deposition_steps': Perovskite_deposition_number_of_deposition_steps,
+            'Perovskite_deposition_procedure': Perovskite_deposition_procedure,
+            'Perovskite_deposition_aggregation_state_of_reactants': Perovskite_deposition_aggregation_state_of_reactants,
+            'Perovskite_deposition_synthesis_atmosphere': Perovskite_deposition_synthesis_atmosphere,
+            'Perovskite_deposition_solvents': Perovskite_deposition_solvents,
+            'Perovskite_deposition_substrate_temperature': Perovskite_deposition_substrate_temperature,
+            'Perovskite_deposition_quenching_induced_crystallisation': Perovskite_deposition_quenching_induced_crystallisation,
+            'Perovskite_deposition_quenching_media': Perovskite_deposition_quenching_media,
+            'Perovskite_deposition_quenching_media_volume': Perovskite_deposition_quenching_media_volume,
+            'Perovskite_deposition_thermal_annealing_temperature': Perovskite_deposition_thermal_annealing_temperature,
+            'Perovskite_deposition_thermal_annealing_time': Perovskite_deposition_thermal_annealing_time,
+            'Perovskite_deposition_thermal_annealing_atmosphere': Perovskite_deposition_thermal_annealing_atmosphere,
+            'Perovskite_deposition_solvent_annealing': Perovskite_deposition_solvent_annealing,
+            'HTL_stack_sequence': HTL_stack_sequence,
+            'HTL_thickness_list': HTL_thickness_list,
+            'HTL_additives_compounds': HTL_additives_compounds,
+            'HTL_deposition_procedure': HTL_deposition_procedure,
+            'HTL_deposition_aggregation_state_of_reactants': HTL_deposition_aggregation_state_of_reactants,
+            'HTL_deposition_synthesis_atmosphere': HTL_deposition_synthesis_atmosphere,
+            'HTL_deposition_solvents': HTL_deposition_solvents,
+            'HTL_deposition_thermal_annealing_temperature': HTL_deposition_thermal_annealing_temperature,
+            'HTL_deposition_thermal_annealing_time': HTL_deposition_thermal_annealing_time,
+            'HTL_deposition_thermal_annealing_atmosphere': HTL_deposition_thermal_annealing_atmosphere,
+            'Backcontact_stack_sequence': Backcontact_stack_sequence,
+            'Backcontact_thickness_list': Backcontact_thickness_list,
+            'Backcontact_deposition_procedure': Backcontact_deposition_procedure,
+            'Encapsulation': Encapsulation,
+            'Encapsulation_stack_sequence': Encapsulation_stack_sequence,
+            'Encapsulation_edge_sealing_materials': Encapsulation_edge_sealing_materials,
+            'Encapsulation_atmosphere_for_encapsulation': Encapsulation_atmosphere_for_encapsulation,
+            'JV_default_Voc': JV_default_Voc,
+            'JV_default_Jsc': JV_default_Jsc,
+            'JV_default_FF': JV_default_FF,
+            'JV_default_PCE': JV_default_PCE,
+            'Stability_protocol': Stability_protocol,
+            'Stability_average_over_n_number_of_cells': Stability_average_over_n_number_of_cells,
+            'Stability_light_intensity': Stability_light_intensity,
+            'Stability_light_spectra': Stability_light_spectra,
+            'Stability_light_UV_filter': Stability_light_UV_filter,
+            'Stability_potential_bias_load_condition': Stability_potential_bias_load_condition,
+            'Stability_PCE_burn_in_observed': Stability_PCE_burn_in_observed,
+            'Stability_light_source_type': Stability_light_source_type,
+            'Stability_temperature_range': Stability_temperature_range,
+            'Stability_atmosphere': Stability_atmosphere,
+            'Stability_relative_humidity_average_value': Stability_relative_humidity_average_value
+        }
+        
+        # 调用老化预测函数
+        predicted_curve, (fig, file_path) = predict_aging_curve(input_params)
+        
+        # 将曲线数据转换为结构化格式
+        y_coords = predicted_curve[:20].tolist()
+        x_coords = predicted_curve[20:].tolist()
+        
+        # 转换图像为MCP Image对象
+        aging_image = fig_to_image(fig)
+        plt.close(fig)
+        
+        if ctx:
+            ctx.info(f"钙钛矿老化曲线预测完成，预测了 {len(x_coords)} 个时间点的性能衰减")
+        
+        return {
+            "text": {
+                "x_values": x_coords,
+                "y_values": y_coords,
+                "file_path": file_path,
+                "summary": f"预测了钙钛矿太阳能电池在给定条件下的老化性能，时间范围包含{len(x_coords)}个数据点"
+            },
+            "images": [aging_image]
+        }
+        
+    except Exception as e:
+        error_msg = f"钙钛矿老化预测失败: {str(e)}"
+        if ctx:
+            ctx.error(error_msg)
+        return {
+            "text": {
+                "error": error_msg
+            }
+        }
+
+@mcp.tool()
+async def predict_perovskite_parameters(
+    er_HTL_top: float = 3.5,        # HTL顶层相对介电常数
+    x_HTL_top: float = 2.8,         # HTL顶层电子亲和力
+    Eg_HTL_top: float = 2.7,        # HTL顶层能隙
+    Nc_HTL_top: float = 1.00E+20,   # HTL顶层导带有效态密度
+    Nv_HTL_top: float = 1.00E+20,   # HTL顶层价带有效态密度
+    mun_HTL_top: float = 1.00E-05,  # HTL顶层电子迁移率
+    mup_HTL_top: float = 0.001,     # HTL顶层空穴迁移率
+    tn_HTL_top: float = 1.00E-06,   # HTL顶层电子寿命
+    tp_HTL_top: float = 1.00E-06,   # HTL顶层空穴寿命
+    er_ETL_top: float = 6.1,        # ETL顶层相对介电常数
+    x_ETL_top: float = 4.4,         # ETL顶层电子亲和力
+    Eg_ETL_top: float = 2.2,        # ETL顶层能隙
+    Nc_ETL_top: float = 2.20E+18,   # ETL顶层导带有效态密度
+    Nv_ETL_top: float = 1.80E+19,   # ETL顶层价带有效态密度
+    mun_ETL_top: float = 720,       # ETL顶层电子迁移率
+    mup_ETL_top: float = 75,        # ETL顶层空穴迁移率
+    tn_ETL_top: float = 1.00E-07,   # ETL顶层电子寿命
+    tp_ETL_top: float = 1.00E-07,   # ETL顶层空穴寿命
+    er_PSK_top: float = 6.5,        # 钙钛矿顶层相对介电常数
+    x_PSK_top: float = 4.17,        # 钙钛矿顶层电子亲和力
+    Nc_PSK_top: float = 1.00E+17,   # 钙钛矿顶层导带有效态密度
+    Nv_PSK_top: float = 1.00E+17,   # 钙钛矿顶层价带有效态密度
+    mun_PSK_top: float = 20,        # 钙钛矿顶层电子迁移率
+    mup_PSK_top: float = 20,        # 钙钛矿顶层空穴迁移率
+    tn_PSK_top: float = 1.00E-07,   # 钙钛矿顶层电子寿命
+    tp_PSK_top: float = 1.00E-07,   # 钙钛矿顶层空穴寿命
+    Eg_PSK_top: float = 1.38,       # 钙钛矿顶层能隙
+    t_HTL_top: float = 0.02,        # HTL顶层厚度
+    t_PSK_top: float = 0.9,         # 钙钛矿顶层厚度
+    t_ETL_top: float = 0.076,       # ETL顶层厚度
+    Na_HTL_top: float = 5.80E+18,   # HTL顶层掺杂浓度
+    Nd_PSK_top: float = 1.33E+16,   # 钙钛矿顶层掺杂浓度
+    Nd_ETL_top: float = 5.86E+19,   # ETL顶层掺杂浓度
+    Nt_HTL_top: float = 7.39E+15,   # HTL顶层缺陷密度
+    Nt_PSK_top: float = 2.56E+13,   # 钙钛矿顶层缺陷密度
+    Nt_ETL_top: float = 1.31E+15,   # ETL顶层缺陷密度
+    Cap_area: float = 1.55E-17,     # 器件面积
+    Dit_top_HTL_PSK: float = 37500000000,  # HTL-钙钛矿界面态密度
+    Dit_top_ETL_PSK: float = 2.77E+12,     # ETL-钙钛矿界面态密度
+    perovskite_type: str = "narrow",        # 钙钛矿类型 ('narrow' 或 'wide')
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    预测钙钛矿太阳能电池的性能参数并生成JV曲线
+    
+    这个工具使用机器学习模型基于钙钛矿太阳能电池的材料参数和结构参数，
+    预测电池的关键性能指标，包括开路电压、短路电流、填充因子和效率等。
+    
+    参数:
+    - er_HTL_top: 空穴传输层相对介电常数
+    - x_HTL_top: 空穴传输层电子亲和力
+    - Eg_HTL_top: 空穴传输层能隙
+    - Nc_HTL_top: 空穴传输层导带有效态密度
+    - Nv_HTL_top: 空穴传输层价带有效态密度
+    - mun_HTL_top: 空穴传输层电子迁移率
+    - mup_HTL_top: 空穴传输层空穴迁移率
+    - tn_HTL_top: 空穴传输层电子寿命
+    - tp_HTL_top: 空穴传输层空穴寿命
+    - er_ETL_top: 电子传输层相对介电常数
+    - x_ETL_top: 电子传输层电子亲和力
+    - Eg_ETL_top: 电子传输层能隙
+    - Nc_ETL_top: 电子传输层导带有效态密度
+    - Nv_ETL_top: 电子传输层价带有效态密度
+    - mun_ETL_top: 电子传输层电子迁移率
+    - mup_ETL_top: 电子传输层空穴迁移率
+    - tn_ETL_top: 电子传输层电子寿命
+    - tp_ETL_top: 电子传输层空穴寿命
+    - er_PSK_top: 钙钛矿层相对介电常数
+    - x_PSK_top: 钙钛矿层电子亲和力
+    - Nc_PSK_top: 钙钛矿层导带有效态密度
+    - Nv_PSK_top: 钙钛矿层价带有效态密度
+    - mun_PSK_top: 钙钛矿层电子迁移率
+    - mup_PSK_top: 钙钛矿层空穴迁移率
+    - tn_PSK_top: 钙钛矿层电子寿命
+    - tp_PSK_top: 钙钛矿层空穴寿命
+    - Eg_PSK_top: 钙钛矿层能隙
+    - t_HTL_top: 空穴传输层厚度
+    - t_PSK_top: 钙钛矿层厚度
+    - t_ETL_top: 电子传输层厚度
+    - Na_HTL_top: 空穴传输层掺杂浓度
+    - Nd_PSK_top: 钙钛矿层掺杂浓度
+    - Nd_ETL_top: 电子传输层掺杂浓度
+    - Nt_HTL_top: 空穴传输层缺陷密度
+    - Nt_PSK_top: 钙钛矿层缺陷密度
+    - Nt_ETL_top: 电子传输层缺陷密度
+    - Cap_area: 器件面积
+    - Dit_top_HTL_PSK: 空穴传输层-钙钛矿界面态密度
+    - Dit_top_ETL_PSK: 电子传输层-钙钛矿界面态密度
+    - perovskite_type: 钙钛矿类型，'narrow'表示窄带隙，'wide'表示宽带隙
+    
+    返回:
+    - 预测的性能参数 (Vm, Im, Voc, Jsc, FF, Eff)
+    - JV曲线图像
+    """
+    if ctx:
+        ctx.info(f"开始预测{perovskite_type}钙钛矿太阳能电池性能参数...")
+    
+    try:
+        # 验证钙钛矿类型
+        if perovskite_type.lower() not in ['narrow', 'wide']:
+            raise ValueError("钙钛矿类型必须是'narrow'或'wide'")
+        
+        # 构建参数字典
+        input_params = {
+            'er_HTL_top': er_HTL_top,
+            'x_HTL_top': x_HTL_top,
+            'Eg_HTL_top': Eg_HTL_top,
+            'Nc_HTL_top': Nc_HTL_top,
+            'Nv_HTL_top': Nv_HTL_top,
+            'mun_HTL_top': mun_HTL_top,
+            'mup_HTL_top': mup_HTL_top,
+            'tn_HTL_top': tn_HTL_top,
+            'tp_HTL_top': tp_HTL_top,
+            'er_ETL_top': er_ETL_top,
+            'x_ETL_top': x_ETL_top,
+            'Eg_ETL_top': Eg_ETL_top,
+            'Nc_ETL_top': Nc_ETL_top,
+            'Nv_ETL_top': Nv_ETL_top,
+            'mun_ETL_top': mun_ETL_top,
+            'mup_ETL_top': mup_ETL_top,
+            'tn_ETL_top': tn_ETL_top,
+            'tp_ETL_top': tp_ETL_top,
+            'er_PSK_top': er_PSK_top,
+            'x_PSK_top': x_PSK_top,
+            'Nc_PSK_top': Nc_PSK_top,
+            'Nv_PSK_top': Nv_PSK_top,
+            'mun_PSK_top': mun_PSK_top,
+            'mup_PSK_top': mup_PSK_top,
+            'tn_PSK_top': tn_PSK_top,
+            'tp_PSK_top': tp_PSK_top,
+            'Eg_PSK_top': Eg_PSK_top,
+            't_HTL_top': t_HTL_top,
+            't_PSK_top': t_PSK_top,
+            't_ETL_top': t_ETL_top,
+            'Na_HTL_top': Na_HTL_top,
+            'Nd_PSK_top': Nd_PSK_top,
+            'Nd_ETL_top': Nd_ETL_top,
+            'Nt_HTL_top': Nt_HTL_top,
+            'Nt_PSK_top': Nt_PSK_top,
+            'Nt_ETL_top': Nt_ETL_top,
+            'Cap_area': Cap_area,
+            'Dit_top_HTL_PSK': Dit_top_HTL_PSK,
+            'Dit_top_ETL_PSK': Dit_top_ETL_PSK
+        }
+        
+        # 调用钙钛矿参数预测函数
+        predictions, fig = predict_perovskite_params_ml(input_params, perovskite_type)
+        
+        # 转换图像为MCP Image对象
+        jv_image = fig_to_image(fig)
+        plt.close(fig)
+        
+        if ctx:
+            ctx.info(f"{perovskite_type}钙钛矿太阳能电池性能参数预测完成")
+            ctx.info(f"预测效率: {predictions.get('Eff', 0):.2f}%")
+            ctx.info(f"开路电压: {predictions.get('Voc', 0):.2f}V")
+            ctx.info(f"短路电流: {predictions.get('Jsc', 0):.2f}mA/cm²")
+            ctx.info(f"填充因子: {predictions.get('FF', 0):.2f}")
+        
+        return {
+            "text": {
+                "predictions": predictions,
+                "perovskite_type": perovskite_type,
+                "summary": f"成功预测{perovskite_type}钙钛矿太阳能电池性能参数，效率为{predictions.get('Eff', 0):.2f}%"
+            },
+            "images": [jv_image]
+        }
+        
+    except Exception as e:
+        error_msg = f"钙钛矿参数预测失败: {str(e)}"
+        if ctx:
+            ctx.error(error_msg)
+        return {
+            "text": {
+                "error": error_msg
+            }
+        }
+
+@mcp.tool()
+async def predict_perovskite_bandgap(
+    perovskite_type: Literal["MAPbIBr", "CsMAFAPbIBr", "MAFA", "CsFA"],
+    Br_percentage: Optional[float] = None,      # Br百分比 (0-1), 仅用于MAPbIBr
+    Cs_ratio: Optional[float] = None,           # Cs比例 (0-1), 用于CsMAFAPbIBr和CsFA
+    FA_ratio: Optional[float] = None,           # FA比例 (0-1), 用于CsMAFAPbIBr和MAFA
+    I_ratio: Optional[float] = None,            # I比例 (0-1), 用于多种类型
+    MA_ratio: Optional[float] = None,           # MA比例 (0-1), 用于MAFA
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    预测钙钛矿材料的带隙
+    
+    这个工具使用多项式回归模型预测不同组成的钙钛矿材料的带隙值。
+    支持四种钙钛矿类型，每种类型需要不同的输入参数。
+    
+    参数:
+    - perovskite_type: 钙钛矿类型，可选值：
+      * "MAPbIBr": 需要Br_percentage参数
+      * "CsMAFAPbIBr": 需要Cs_ratio, FA_ratio, I_ratio参数
+      * "MAFA": 需要MA_ratio, I_ratio参数
+      * "CsFA": 需要Cs_ratio, I_ratio参数
+    - Br_percentage: Br在总卤化物中的百分比 (0-1)
+    - Cs_ratio: Cs在总阳离子中的比例 (0-1)
+    - FA_ratio: FA在总阳离子中的比例 (0-1)
+    - I_ratio: I在总卤化物中的比例 (0-1)
+    - MA_ratio: MA在总阳离子中的比例 (0-1)
+    
+    返回:
+    - 预测的带隙值 (eV)
+    - 使用的模型信息和精度指标
+    - 相关的化学公式或计算方法
+    """
+    if ctx:
+        ctx.info(f"开始预测{perovskite_type}钙钛矿材料的带隙...")
+    
+    try:
+        if perovskite_type == "MAPbIBr":
+            if Br_percentage is None:
+                raise ValueError("MAPbIBr类型需要提供Br_percentage参数")
+            
+            # 计算MAPbIBr的带隙
+            bandgap = 1.565 + 0.15 * Br_percentage
+            
+            if ctx:
+                ctx.info(f"MAPbIBr带隙预测完成，Br_percentage={Br_percentage:.3f}, 带隙={bandgap:.3f}eV")
+            
+            return {
+                "text": {
+                    "bandgap": bandgap,
+                    "unit": "eV",
+                    "formula": "1.565 + 0.15 * Br_percentage",
+                    "input_parameters": {"Br_percentage": Br_percentage},
+                    "perovskite_type": perovskite_type,
+                    "summary": f"{perovskite_type}钙钛矿的预测带隙为{bandgap:.3f} eV"
+                }
+            }
+            
+        elif perovskite_type == "CsMAFAPbIBr":
+            if any(p is None for p in [Cs_ratio, FA_ratio, I_ratio]):
+                raise ValueError("CsMAFAPbIBr类型需要提供Cs_ratio, FA_ratio和I_ratio参数")
+            
+            # CsMAFAPbIBr系数
+            coefficients = np.array([0.00000000e+00, 1.85103066e+01, -5.67081558e+00, 3.26564185e-01,
+                                    -8.29277827e+01, -9.20817024e+00, -6.70094406e+00, 2.85323968e+00,
+                                    4.00960394e+00, -1.94235432e-01, 3.23777507e+01, -2.17075962e+00,
+                                    2.43646256e+01, -1.61156004e+00, 4.36068310e+00, 2.40287403e-01,
+                                    -1.08276395e+00, -6.04079873e-01, -7.64009588e-01, 3.49371493e-02])
+            intercept = 1.4053637187538268
+            
+            # 制作特征向量
+            x = np.array([Cs_ratio, FA_ratio, I_ratio])
+            
+            # 多项式特征展开 (3次多项式)
+            poly_features = []
+            for i in range(4):  # 度数从0到3
+                if i == 0:
+                    poly_features.append(1)  # 常数项
+                else:
+                    for j in range(len(x)**i):
+                        indices = np.unravel_index(j, tuple([len(x)] * i))
+                        term = np.prod([x[idx] for idx in indices])
+                        poly_features.append(term)
+            
+            # 裁剪到对应系数长度
+            poly_features = np.array(poly_features[:len(coefficients)])
+            
+            # 预测带隙
+            bandgap = np.dot(coefficients, poly_features) + intercept
+            
+            if ctx:
+                ctx.info(f"CsMAFAPbIBr带隙预测完成，带隙={bandgap:.3f}eV")
+                ctx.info(f"输入参数: Cs_ratio={Cs_ratio:.3f}, FA_ratio={FA_ratio:.3f}, I_ratio={I_ratio:.3f}")
+            
+            return {
+                "text": {
+                    "bandgap": float(bandgap),
+                    "unit": "eV",
+                    "model_metrics": {
+                        "degree": 3,
+                        "standard_error": 0.03,
+                        "R2_1": 0.59,
+                        "R2_2": 0.36
+                    },
+                    "input_parameters": {
+                        "Cs_ratio": Cs_ratio,
+                        "FA_ratio": FA_ratio,
+                        "I_ratio": I_ratio
+                    },
+                    "perovskite_type": perovskite_type,
+                    "summary": f"{perovskite_type}钙钛矿的预测带隙为{bandgap:.3f} eV"
+                }
+            }
+            
+        elif perovskite_type == "MAFA":
+            if any(p is None for p in [MA_ratio, I_ratio]):
+                raise ValueError("MAFA类型需要提供MA_ratio和I_ratio参数")
+            
+            # MAFA系数
+            coefficients = np.array([6.67041914e-09, 1.80035243e+02, -4.12649518e+01, 5.81805141e+01,
+                                    1.50772432e+02, -1.51313184e+01, 7.31982621e+01, -1.45092632e+01,
+                                    3.48092947e+01, 9.27160558e+01, 4.33999570e+01, 6.27801418e+01,
+                                    -1.47514433e+02, -1.06362220e+02, -4.30021694e+01, -1.54381644e+01,
+                                    4.98614404e+01, -5.15784751e+01, 5.32769966e+01, 2.36684346e+01,
+                                    5.60752291e+00])
+            intercept = -121.17914592495342
+            
+            # 制作特征向量
+            x = np.array([MA_ratio, I_ratio])
+            
+            # 多项式特征展开 (5次多项式)
+            poly_features = []
+            for i in range(6):  # 度数从0到5
+                if i == 0:
+                    poly_features.append(1)  # 常数项
+                else:
+                    for j in range(len(x)**i):
+                        indices = np.unravel_index(j, tuple([len(x)] * i))
+                        term = np.prod([x[idx] for idx in indices])
+                        poly_features.append(term)
+            
+            # 裁剪到对应系数长度
+            poly_features = np.array(poly_features[:len(coefficients)])
+            
+            # 预测带隙
+            bandgap = np.dot(coefficients, poly_features) + intercept
+            
+            if ctx:
+                ctx.info(f"MAFA带隙预测完成，带隙={bandgap:.3f}eV")
+                ctx.info(f"输入参数: MA_ratio={MA_ratio:.3f}, I_ratio={I_ratio:.3f}")
+            
+            return {
+                "text": {
+                    "bandgap": float(bandgap),
+                    "unit": "eV",
+                    "model_metrics": {
+                        "degree": 5,
+                        "standard_error": 0.03,
+                        "R2_1": 0.76,
+                        "R2_2": 0.51
+                    },
+                    "input_parameters": {
+                        "MA_ratio": MA_ratio,
+                        "I_ratio": I_ratio
+                    },
+                    "perovskite_type": perovskite_type,
+                    "summary": f"{perovskite_type}钙钛矿的预测带隙为{bandgap:.3f} eV"
+                }
+            }
+            
+        elif perovskite_type == "CsFA":
+            if any(p is None for p in [Cs_ratio, I_ratio]):
+                raise ValueError("CsFA类型需要提供Cs_ratio和I_ratio参数")
+            
+            # CsFA系数
+            coefficients = np.array([0.00000000e+00, 1.28022233e+04, 1.45111610e+03, -7.40110126e+03,
+                                    -2.07915040e+04, -4.24724412e+02, -5.40241551e+03, 1.11307802e+04,
+                                    1.23925881e+04, -1.40613786e+02, -2.75876681e+02, 4.50375583e+03,
+                                    -5.35781276e+03, -3.21086901e+03, 9.14203208e+01, 1.01612857e+02,
+                                    1.03191599e+02, -9.50461745e+02, 8.37296821e+02, 3.04467837e+02,
+                                    -1.23098003e+01])
+            intercept = -1143.8520505192823
+            
+            # 制作特征向量
+            x = np.array([Cs_ratio, I_ratio])
+            
+            # 多项式特征展开 (5次多项式)
+            poly_features = []
+            for i in range(6):  # 度数从0到5
+                if i == 0:
+                    poly_features.append(1)  # 常数项
+                else:
+                    for j in range(len(x)**i):
+                        indices = np.unravel_index(j, tuple([len(x)] * i))
+                        term = np.prod([x[idx] for idx in indices])
+                        poly_features.append(term)
+            
+            # 裁剪到对应系数长度
+            poly_features = np.array(poly_features[:len(coefficients)])
+            
+            # 预测带隙
+            bandgap = np.dot(coefficients, poly_features) + intercept
+            
+            if ctx:
+                ctx.info(f"CsFA带隙预测完成，带隙={bandgap:.3f}eV")
+                ctx.info(f"输入参数: Cs_ratio={Cs_ratio:.3f}, I_ratio={I_ratio:.3f}")
+            
+            return {
+                "text": {
+                    "bandgap": float(bandgap),
+                    "unit": "eV",
+                    "model_metrics": {
+                        "degree": 5,
+                        "standard_error": 0.04,
+                        "R2_1": 0.73,
+                        "R2_2": 0.48
+                    },
+                    "input_parameters": {
+                        "Cs_ratio": Cs_ratio,
+                        "I_ratio": I_ratio
+                    },
+                    "perovskite_type": perovskite_type,
+                    "summary": f"{perovskite_type}钙钛矿的预测带隙为{bandgap:.3f} eV"
+                }
+            }
+        else:
+            raise ValueError("不支持的钙钛矿类型")
+            
+    except Exception as e:
+        error_msg = f"钙钛矿带隙预测失败: {str(e)}"
+        if ctx:
+            ctx.error(error_msg)
+        return {
+            "text": {
+                "error": error_msg
             }
         }
 
