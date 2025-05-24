@@ -7,13 +7,18 @@
             <div class="card-header">
               <h2>💬 AI对话助手</h2>
               <p>与太阳能电池AI专家交流，获取专业建议</p>
+              <div class="status-info">
+                <el-tag :type="getStatusType()" size="small">
+                  {{ chatStore.statusMessage }}
+                </el-tag>
+              </div>
             </div>
           </template>
           
           <!-- 聊天区域 -->
           <div class="chat-area" ref="chatArea">
             <div 
-              v-for="message in messages" 
+              v-for="message in chatStore.messages" 
               :key="message.id"
               :class="['message', message.role === 'user' ? 'user-message' : 'ai-message']"
             >
@@ -24,7 +29,46 @@
                 <div v-else class="ai-avatar">🤖</div>
               </div>
               <div class="message-content">
-                <div class="message-text" v-html="formatMessage(message.content)"></div>
+                <div 
+                  class="message-text" 
+                  :class="{ 'error-message': message.error }"
+                  v-html="chatStore.formatMessage(message.content)"
+                ></div>
+                
+                <!-- 推理过程显示 -->
+                <div v-if="message.reasoning" class="reasoning-content">
+                  <el-collapse>
+                    <el-collapse-item title="🧠 AI推理过程" name="reasoning">
+                      <div class="reasoning-text">{{ message.reasoning }}</div>
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
+                
+                <!-- 上下文信息显示 -->
+                <div v-if="message.context && message.context.length > 0" class="context-content">
+                  <el-collapse>
+                    <el-collapse-item title="📚 参考上下文" name="context">
+                      <div v-for="(ctx, index) in message.context" :key="index" class="context-item">
+                        {{ ctx }}
+                      </div>
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
+                
+                <!-- 图像显示 -->
+                <div v-if="message.images && message.images.length > 0" class="images-content">
+                  <div v-for="(img, index) in message.images" :key="index" class="image-item">
+                    <el-image
+                      :src="getImageUrl(img)"
+                      :alt="`图像 ${index + 1}`"
+                      fit="contain"
+                      style="max-width: 300px; max-height: 200px;"
+                      :preview-src-list="[getImageUrl(img)]"
+                      @error="handleImageError"
+                    />
+                  </div>
+                </div>
+                
                 <div class="message-time">
                   {{ formatTime(message.timestamp) }}
                 </div>
@@ -32,7 +76,7 @@
             </div>
             
             <!-- 加载指示器 -->
-            <div v-if="isLoading" class="message ai-message">
+            <div v-if="chatStore.isLoading" class="message ai-message">
               <div class="message-avatar">
                 <div class="ai-avatar">🤖</div>
               </div>
@@ -42,6 +86,7 @@
                   <span></span>
                   <span></span>
                 </div>
+                <div class="typing-text">AI正在思考...</div>
               </div>
             </div>
           </div>
@@ -54,7 +99,7 @@
               :rows="3"
               placeholder="输入您的问题..."
               @keydown.ctrl.enter="sendMessage"
-              :disabled="isLoading"
+              :disabled="chatStore.isLoading"
               class="message-input"
             />
             <div class="input-actions">
@@ -64,8 +109,9 @@
               <el-button
                 type="primary"
                 @click="sendMessage"
-                :loading="isLoading"
+                :loading="chatStore.isLoading"
                 class="gradient-btn"
+                :disabled="!inputMessage.trim()"
               >
                 发送
               </el-button>
@@ -84,17 +130,26 @@
             <el-form label-position="top">
               <el-form-item label="选择模型">
                 <el-select
-                  v-model="selectedModel"
-                  @change="updateModel"
+                  :model-value="chatStore.selectedModel"
+                  @change="chatStore.switchModel"
                   style="width: 100%"
+                  :disabled="chatStore.isLoading"
                 >
                   <el-option
-                    v-for="model in availableModels"
-                    :key="model"
-                    :label="model"
-                    :value="model"
+                    v-for="model in chatStore.availableModels"
+                    :key="model.id"
+                    :label="model.name"
+                    :value="model.id"
                   />
                 </el-select>
+              </el-form-item>
+              
+              <el-form-item label="当前对话ID">
+                <el-input
+                  :model-value="chatStore.currentConversationId || '未创建'"
+                  readonly
+                  size="small"
+                />
               </el-form-item>
             </el-form>
           </div>
@@ -106,10 +161,11 @@
             <div class="history-header">
               <h3>📚 对话历史</h3>
               <el-button
-                @click="newConversation"
+                @click="chatStore.createNewConversation"
                 type="primary"
                 size="small"
                 class="gradient-btn"
+                :loading="chatStore.isLoading"
               >
                 新建对话
               </el-button>
@@ -117,22 +173,37 @@
           </template>
           <div class="control-section">
             <el-select
-              v-model="selectedConversation"
+              :model-value="selectedConversation"
               @change="loadConversation"
               placeholder="选择历史对话"
               style="width: 100%; margin-bottom: 12px;"
+              :disabled="chatStore.isLoading"
             >
               <el-option
-                v-for="conv in conversations"
-                :key="conv.id"
-                :label="conv.title"
-                :value="conv.id"
+                v-for="conv in chatStore.conversations"
+                :key="conv"
+                :label="conv"
+                :value="conv"
               />
             </el-select>
             
             <div class="conversation-actions">
-              <el-button @click="refreshConversations" size="small" style="width: 100%;">
+              <el-button 
+                @click="chatStore.refreshConversations" 
+                size="small" 
+                style="width: 48%;"
+                :loading="chatStore.isLoading"
+              >
                 刷新列表
+              </el-button>
+              <el-button 
+                @click="clearConversation" 
+                size="small" 
+                type="warning"
+                style="width: 48%;"
+                :disabled="chatStore.isLoading"
+              >
+                清空对话
               </el-button>
             </div>
           </div>
@@ -143,127 +214,67 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
-import type { Message, Conversation } from '@/types'
+import { ref, onMounted, nextTick, computed, watch } from 'vue'
+import { useChatStore } from '@/stores/chat'
 
-const messages = ref<Message[]>([])
-const conversations = ref<Conversation[]>([])
+const chatStore = useChatStore()
 const inputMessage = ref('')
-const isLoading = ref(false)
-const selectedModel = ref('deepseek-chat')
 const selectedConversation = ref('')
 const chatArea = ref<HTMLElement>()
 
-const availableModels = [
-  'deepseek-chat',
-  'gpt-3.5-turbo',
-  'gpt-4',
-  'claude-3',
-]
-
-onMounted(() => {
-  loadConversations()
-  // 显示欢迎消息
-  const welcomeMessage: Message = {
-    id: generateId(),
-    role: 'assistant',
-    content: '你好！我是太阳能电池AI助手。我可以帮助您解答关于太阳能电池技术的问题，包括硅电池、钙钛矿电池的原理、性能预测、工艺优化等。请随时向我提问！',
-    timestamp: Date.now()
-  }
-  messages.value.push(welcomeMessage)
+onMounted(async () => {
+  await chatStore.initialize()
+  await scrollToBottom()
 })
 
+// 监听消息变化，自动滚动到底部
+watch(
+  () => chatStore.messages,
+  () => {
+    nextTick(() => {
+      scrollToBottom()
+    })
+  },
+  { deep: true }
+)
+
+// 发送消息
 const sendMessage = async () => {
-  if (!inputMessage.value.trim() || isLoading.value) return
+  if (!inputMessage.value.trim() || chatStore.isLoading) return
   
-  const userMessage: Message = {
-    id: generateId(),
-    role: 'user',
-    content: inputMessage.value,
-    timestamp: Date.now()
-  }
-  
-  messages.value.push(userMessage)
+  const message = inputMessage.value.trim()
   inputMessage.value = ''
-  isLoading.value = true
   
   await scrollToBottom()
+  await chatStore.sendMessage(message)
+  await scrollToBottom()
+}
+
+// 加载对话
+const loadConversation = async (conversationId: string) => {
+  if (!conversationId) return
   
-  try {
-    // 模拟API调用
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    const aiResponse: Message = {
-      id: generateId(),
-      role: 'assistant',
-      content: `这是对"${userMessage.content}"的回复。在实际应用中，这里会是AI模型的真实回复。`,
-      timestamp: Date.now()
-    }
-    
-    messages.value.push(aiResponse)
-    await scrollToBottom()
-  } catch (error) {
-    console.error('发送消息失败:', error)
-  } finally {
-    isLoading.value = false
-  }
+  selectedConversation.value = conversationId
+  await chatStore.loadConversation(conversationId)
+  await scrollToBottom()
 }
 
-const updateModel = (model: string) => {
-  selectedModel.value = model
-  // 在实际应用中，这里会调用API更新模型
-  console.log('切换模型:', model)
-}
-
-const newConversation = () => {
-  messages.value = []
+// 清空对话
+const clearConversation = () => {
+  chatStore.clearCurrentConversation()
   selectedConversation.value = ''
-  const welcomeMessage: Message = {
-    id: generateId(),
-    role: 'assistant',
-    content: '新的对话开始了！我是太阳能电池AI助手，有什么可以帮助您的吗？',
-    timestamp: Date.now()
-  }
-  messages.value.push(welcomeMessage)
 }
 
-const loadConversation = (conversationId: string) => {
-  // 在实际应用中，这里会从API加载对话历史
-  console.log('加载对话:', conversationId)
+// 获取状态类型
+const getStatusType = () => {
+  const status = chatStore.statusMessage
+  if (status.includes('错误') || status.includes('失败')) return 'danger'
+  if (status.includes('发送中') || status.includes('中...')) return 'warning'
+  if (status.includes('完成') || status.includes('成功')) return 'success'
+  return 'info'
 }
 
-const loadConversations = () => {
-  // 模拟加载对话列表
-  conversations.value = [
-    {
-      id: '1',
-      title: '硅电池效率优化',
-      messages: [],
-      createdAt: Date.now() - 86400000,
-      updatedAt: Date.now() - 86400000
-    },
-    {
-      id: '2',
-      title: '钙钛矿电池稳定性',
-      messages: [],
-      createdAt: Date.now() - 172800000,
-      updatedAt: Date.now() - 172800000
-    }
-  ]
-}
-
-const refreshConversations = () => {
-  loadConversations()
-}
-
-const formatMessage = (content: string) => {
-  // 简单的markdown转换
-  return content
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/\n/g, '<br>')
-}
-
+// 格式化时间
 const formatTime = (timestamp: number) => {
   const date = new Date(timestamp)
   return date.toLocaleTimeString('zh-CN', { 
@@ -272,6 +283,7 @@ const formatTime = (timestamp: number) => {
   })
 }
 
+// 滚动到底部
 const scrollToBottom = async () => {
   await nextTick()
   if (chatArea.value) {
@@ -279,8 +291,28 @@ const scrollToBottom = async () => {
   }
 }
 
-const generateId = () => {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2)
+// 获取图像URL
+const getImageUrl = (img: any) => {
+  if (typeof img === 'string') {
+    return img
+  }
+  if (img && typeof img === 'object') {
+    if (img.url) return img.url
+    if (img.url_path) {
+      // 构建完整的图像URL，使用与API相同的服务器地址
+      return `http://10.10.20.62:8000${img.url_path}`
+    }
+  }
+  return ''
+}
+
+// 处理图像加载错误
+const handleImageError = (event: Event) => {
+  console.error('图像加载失败:', event)
+  const target = event.target as HTMLImageElement
+  if (target) {
+    target.style.display = 'none'
+  }
 }
 </script>
 
@@ -302,6 +334,11 @@ const generateId = () => {
   padding: 0;
 }
 
+.card-header {
+  display: flex;
+  flex-direction: column;
+}
+
 .card-header h2 {
   margin: 0 0 8px 0;
   color: #1976d2;
@@ -309,16 +346,23 @@ const generateId = () => {
 }
 
 .card-header p {
-  margin: 0;
+  margin: 0 0 8px 0;
   color: #666;
   font-size: 0.9em;
+}
+
+.status-info {
+  margin-top: 8px;
 }
 
 .chat-area {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
+  overflow-x: hidden;
   background: linear-gradient(to bottom, #f8f9fa, #ffffff);
+  max-height: calc(100vh - 300px);
+  min-height: 400px;
 }
 
 .dark .chat-area {
@@ -382,6 +426,12 @@ const generateId = () => {
   color: white;
 }
 
+.error-message {
+  background: linear-gradient(45deg, #f44336, #ef5350) !important;
+  color: white !important;
+  border-left: 4px solid #d32f2f;
+}
+
 .dark .message-text {
   background: #2d3748;
   color: #e2e8f0;
@@ -389,6 +439,54 @@ const generateId = () => {
 
 .dark .user-message .message-text {
   background: linear-gradient(45deg, #1976d2, #42a5f5);
+}
+
+.reasoning-content,
+.context-content {
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+.reasoning-text {
+  padding: 12px;
+  background: #f0f7ff;
+  border-radius: 8px;
+  border-left: 4px solid #1976d2;
+  font-family: monospace;
+  font-size: 0.9em;
+  white-space: pre-wrap;
+}
+
+.dark .reasoning-text {
+  background: #1a365d;
+  color: #e2e8f0;
+}
+
+.context-item {
+  padding: 8px;
+  margin: 4px 0;
+  background: #f8f9fa;
+  border-radius: 6px;
+  font-size: 0.9em;
+  border-left: 3px solid #28a745;
+}
+
+.dark .context-item {
+  background: #2d3748;
+  color: #e2e8f0;
+}
+
+.images-content {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.image-item {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .message-time {
@@ -442,7 +540,7 @@ const generateId = () => {
 
 .conversation-actions {
   display: flex;
-  gap: 8px;
+  justify-content: space-between;
 }
 
 .typing-indicator {
@@ -465,6 +563,17 @@ const generateId = () => {
 
 .typing-indicator span:nth-child(3) {
   animation-delay: 0.4s;
+}
+
+.typing-text {
+  margin-top: 4px;
+  font-size: 0.9em;
+  color: #666;
+  text-align: center;
+}
+
+.dark .typing-text {
+  color: #a0aec0;
 }
 
 @keyframes slideIn {
@@ -490,6 +599,23 @@ const generateId = () => {
   100% {
     transform: scale(0.8);
     opacity: 0.5;
+  }
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+  .message-content {
+    max-width: 85%;
+  }
+}
+
+@media (max-width: 768px) {
+  .message-content {
+    max-width: 95%;
+  }
+  
+  .chat-card {
+    height: calc(100vh - 120px);
   }
 }
 </style> 

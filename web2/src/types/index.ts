@@ -4,6 +4,10 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  reasoning?: string  // AI推理过程
+  context?: any[]     // 上下文信息
+  images?: any[]      // 图像信息
+  error?: boolean     // 是否为错误消息
 }
 
 export interface Conversation {
