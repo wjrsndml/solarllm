@@ -88,7 +88,7 @@ with gr.Blocks(
             bandgap_btn = gr.Button("🔷 钙钛矿带隙预测", elem_classes="nav-button")
         
         # 右侧主内容区域
-        with gr.Column(scale=4, elem_classes="main-content"):
+        with gr.Column(scale=9, elem_classes="main-content"):
             # 各个功能页面的容器
             with gr.Group(visible=True) as chat_container:
                 gr.Markdown("## 💬 AI对话")
@@ -117,7 +117,12 @@ with gr.Blocks(
             gr.update(visible=False),  # solar_container
             gr.update(visible=False),  # aging_container
             gr.update(visible=False),  # perovskite_container
-            gr.update(visible=False)   # bandgap_container
+            gr.update(visible=False),  # bandgap_container
+            gr.update(elem_classes="nav-button selected"),  # chat_btn
+            gr.update(elem_classes="nav-button"),           # solar_btn
+            gr.update(elem_classes="nav-button"),           # aging_btn
+            gr.update(elem_classes="nav-button"),           # perovskite_btn
+            gr.update(elem_classes="nav-button")            # bandgap_btn
         ]
     
     def show_solar():
@@ -126,7 +131,12 @@ with gr.Blocks(
             gr.update(visible=True),   # solar_container
             gr.update(visible=False),  # aging_container
             gr.update(visible=False),  # perovskite_container
-            gr.update(visible=False)   # bandgap_container
+            gr.update(visible=False),  # bandgap_container
+            gr.update(elem_classes="nav-button"),           # chat_btn
+            gr.update(elem_classes="nav-button selected"),  # solar_btn
+            gr.update(elem_classes="nav-button"),           # aging_btn
+            gr.update(elem_classes="nav-button"),           # perovskite_btn
+            gr.update(elem_classes="nav-button")            # bandgap_btn
         ]
     
     def show_aging():
@@ -135,7 +145,12 @@ with gr.Blocks(
             gr.update(visible=False),  # solar_container
             gr.update(visible=True),   # aging_container
             gr.update(visible=False),  # perovskite_container
-            gr.update(visible=False)   # bandgap_container
+            gr.update(visible=False),  # bandgap_container
+            gr.update(elem_classes="nav-button"),           # chat_btn
+            gr.update(elem_classes="nav-button"),           # solar_btn
+            gr.update(elem_classes="nav-button selected"),  # aging_btn
+            gr.update(elem_classes="nav-button"),           # perovskite_btn
+            gr.update(elem_classes="nav-button")            # bandgap_btn
         ]
     
     def show_perovskite():
@@ -144,7 +159,12 @@ with gr.Blocks(
             gr.update(visible=False),  # solar_container
             gr.update(visible=False),  # aging_container
             gr.update(visible=True),   # perovskite_container
-            gr.update(visible=False)   # bandgap_container
+            gr.update(visible=False),  # bandgap_container
+            gr.update(elem_classes="nav-button"),           # chat_btn
+            gr.update(elem_classes="nav-button"),           # solar_btn
+            gr.update(elem_classes="nav-button"),           # aging_btn
+            gr.update(elem_classes="nav-button selected"),  # perovskite_btn
+            gr.update(elem_classes="nav-button")            # bandgap_btn
         ]
     
     def show_bandgap():
@@ -153,33 +173,43 @@ with gr.Blocks(
             gr.update(visible=False),  # solar_container
             gr.update(visible=False),  # aging_container
             gr.update(visible=False),  # perovskite_container
-            gr.update(visible=True)    # bandgap_container
+            gr.update(visible=True),   # bandgap_container
+            gr.update(elem_classes="nav-button"),           # chat_btn
+            gr.update(elem_classes="nav-button"),           # solar_btn
+            gr.update(elem_classes="nav-button"),           # aging_btn
+            gr.update(elem_classes="nav-button"),           # perovskite_btn
+            gr.update(elem_classes="nav-button selected")   # bandgap_btn
         ]
     
     # 绑定按钮点击事件
     chat_btn.click(
         show_chat,
-        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container]
+        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container,
+                chat_btn, solar_btn, aging_btn, perovskite_btn, bandgap_btn]
     )
     
     solar_btn.click(
         show_solar,
-        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container]
+        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container,
+                chat_btn, solar_btn, aging_btn, perovskite_btn, bandgap_btn]
     )
     
     aging_btn.click(
         show_aging,
-        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container]
+        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container,
+                chat_btn, solar_btn, aging_btn, perovskite_btn, bandgap_btn]
     )
     
     perovskite_btn.click(
         show_perovskite,
-        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container]
+        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container,
+                chat_btn, solar_btn, aging_btn, perovskite_btn, bandgap_btn]
     )
     
     bandgap_btn.click(
         show_bandgap,
-        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container]
+        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container,
+                chat_btn, solar_btn, aging_btn, perovskite_btn, bandgap_btn]
     )
 
 if __name__ == "__main__":
