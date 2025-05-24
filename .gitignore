@@ -81,3 +81,5 @@ txt/
 
 api/simulation_results/
 api/plot_results/
+
+web2/node_modules
