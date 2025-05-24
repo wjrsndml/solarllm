@@ -58,114 +58,113 @@ perovskite_param_definitions = {
 }
 
 def build_perovskite_tab():
-    with gr.Tab("钙钛矿电池参数预测"):
-        default_perovskite_params = load_default_perovskite_params()
+    default_perovskite_params = load_default_perovskite_params()
+    
+    with gr.Row():
+        with gr.Column(scale=2):
+            perovskite_jv_curve = gr.Image(label="钙钛矿JV曲线", height=350)
+        with gr.Column(scale=1):
+            perovskite_result_text = gr.Textbox(label="预测结果", lines=10)
+            perovskite_loading_indicator = gr.Markdown("_仿真状态: 就绪_")
+
+    perovskite_type_radio = gr.Radio(
+        ["narrow", "wide"],
+        label="钙钛矿能带类型", # Changed label
+        value="narrow",
+        info="选择窄带隙或宽带隙对应的预设参数集"
+    )
+
+    perovskite_input_controls_map = {}
+    # Define groups for tabs
+    param_groups = {
+        "HTL参数": [k for k, v in perovskite_param_definitions.items() if v['group'] == 'HTL'],
+        "ETL参数": [k for k, v in perovskite_param_definitions.items() if v['group'] == 'ETL'],
+        "钙钛矿层参数": [k for k, v in perovskite_param_definitions.items() if v['group'] == 'PSK'],
+        "器件与界面参数": [k for k, v in perovskite_param_definitions.items() if v['group'] == 'Device']
+    }
+
+    with gr.Tabs():
+        for group_label, param_names_in_group in param_groups.items():
+            if not param_names_in_group: continue # Skip empty groups
+            with gr.Tab(label=group_label):
+                with gr.Column(): # Parameters in a group will be in a single column
+                    for name in param_names_in_group:
+                        param_info = perovskite_param_definitions[name]
+                        label = param_info['label']
+                        min_val = param_info['min']
+                        max_val = param_info['max'] # Not directly used by gr.Number but good for reference or future validation
+                        step = param_info['step']
+                        
+                        default_val = default_perovskite_params.get(name, (min_val + max_val) / 2) 
+                                                  # default_val could be string from API, convert for format_value
+                        try:
+                            numeric_default_val = float(default_val)
+                            formatted_default_val_str = format_value_for_input(numeric_default_val)
+                        except (ValueError, TypeError):
+                            formatted_default_val_str = str(default_val) # Use as is if not number
+                        
+                        # For gr.Number, min/max are not strictly enforced like Slider but good for context
+                        # The `step` is important for gr.Number user experience.
+                        control = gr.Number(label=label, value=formatted_default_val_str, step=step)
+                        perovskite_input_controls_map[name] = control
+    
+    # Maintain order for the callback based on perovskite_param_definitions keys
+    ordered_param_names = list(perovskite_param_definitions.keys())
+    perovskite_ordered_controls = [perovskite_input_controls_map[name] for name in ordered_param_names]
+
+    all_inputs_for_api = [perovskite_type_radio] + perovskite_ordered_controls
+
+    # Wrapper for prediction to handle loading state and parameter processing
+    def perform_prediction_with_status(*inputs_from_ui):
+        perovskite_loading_indicator.value = "_仿真状态: 计算中..._"
         
-        with gr.Row():
-            with gr.Column(scale=2):
-                perovskite_jv_curve = gr.Image(label="钙钛矿JV曲线", height=350)
-            with gr.Column(scale=1):
-                perovskite_result_text = gr.Textbox(label="预测结果", lines=10)
-                perovskite_loading_indicator = gr.Markdown("_仿真状态: 就绪_")
-
-        perovskite_type_radio = gr.Radio(
-            ["narrow", "wide"],
-            label="钙钛矿能带类型", # Changed label
-            value="narrow",
-            info="选择窄带隙或宽带隙对应的预设参数集"
-        )
-
-        perovskite_input_controls_map = {}
-        # Define groups for tabs
-        param_groups = {
-            "HTL参数": [k for k, v in perovskite_param_definitions.items() if v['group'] == 'HTL'],
-            "ETL参数": [k for k, v in perovskite_param_definitions.items() if v['group'] == 'ETL'],
-            "钙钛矿层参数": [k for k, v in perovskite_param_definitions.items() if v['group'] == 'PSK'],
-            "器件与界面参数": [k for k, v in perovskite_param_definitions.items() if v['group'] == 'Device']
-        }
-
-        with gr.Tabs():
-            for group_label, param_names_in_group in param_groups.items():
-                if not param_names_in_group: continue # Skip empty groups
-                with gr.Tab(label=group_label):
-                    with gr.Column(): # Parameters in a group will be in a single column
-                        for name in param_names_in_group:
-                            param_info = perovskite_param_definitions[name]
-                            label = param_info['label']
-                            min_val = param_info['min']
-                            max_val = param_info['max'] # Not directly used by gr.Number but good for reference or future validation
-                            step = param_info['step']
-                            
-                            default_val = default_perovskite_params.get(name, (min_val + max_val) / 2) 
-                                                      # default_val could be string from API, convert for format_value
-                            try:
-                                numeric_default_val = float(default_val)
-                                formatted_default_val_str = format_value_for_input(numeric_default_val)
-                            except (ValueError, TypeError):
-                                formatted_default_val_str = str(default_val) # Use as is if not number
-                            
-                            # For gr.Number, min/max are not strictly enforced like Slider but good for context
-                            # The `step` is important for gr.Number user experience.
-                            control = gr.Number(label=label, value=formatted_default_val_str, step=step)
-                            perovskite_input_controls_map[name] = control
+        # Extract perovskite_type and the rest of the parameters
+        # The first input is perovskite_type_radio
+        perovskite_type_val = inputs_from_ui[0]
+        param_values_from_ui = inputs_from_ui[1:]
         
-        # Maintain order for the callback based on perovskite_param_definitions keys
-        ordered_param_names = list(perovskite_param_definitions.keys())
-        perovskite_ordered_controls = [perovskite_input_controls_map[name] for name in ordered_param_names]
-
-        all_inputs_for_api = [perovskite_type_radio] + perovskite_ordered_controls
-
-        # Wrapper for prediction to handle loading state and parameter processing
-        def perform_prediction_with_status(*inputs_from_ui):
-            perovskite_loading_indicator.value = "_仿真状态: 计算中..._"
-            
-            # Extract perovskite_type and the rest of the parameters
-            # The first input is perovskite_type_radio
-            perovskite_type_val = inputs_from_ui[0]
-            param_values_from_ui = inputs_from_ui[1:]
-            
-            api_params = {"perovskite_type": perovskite_type_val}
-            for i, param_name in enumerate(ordered_param_names):
-                raw_val = param_values_from_ui[i]
-                if isinstance(raw_val, str):
-                    try:
-                        api_params[param_name] = float(raw_val)
-                    except ValueError:
-                        api_params[param_name] = raw_val # Keep as string if not floatable
-                else:
-                    api_params[param_name] = raw_val # Already a number
-            
-            try:
+        api_params = {"perovskite_type": perovskite_type_val}
+        for i, param_name in enumerate(ordered_param_names):
+            raw_val = param_values_from_ui[i]
+            if isinstance(raw_val, str):
+                try:
+                    api_params[param_name] = float(raw_val)
+                except ValueError:
+                    api_params[param_name] = raw_val # Keep as string if not floatable
+            else:
+                api_params[param_name] = raw_val # Already a number
+        
+        try:
 
 
-                args_for_api_call = [api_params.pop('perovskite_type')] # First arg is type
-                for name in ordered_param_names: # Add params in the defined order
-                    args_for_api_call.append(api_params[name])
+            args_for_api_call = [api_params.pop('perovskite_type')] # First arg is type
+            for name in ordered_param_names: # Add params in the defined order
+                args_for_api_call.append(api_params[name])
 
-                result_text, jv_curve = call_perovskite_predict_api(*args_for_api_call)
-                perovskite_loading_indicator.value = "_仿真状态: 完成_"
-                return result_text, jv_curve
-            except Exception as e:
-                perovskite_loading_indicator.value = f"_仿真状态: 出错 ({type(e).__name__})_"
-                return f"预测出错: {str(e)}", None
+            result_text, jv_curve = call_perovskite_predict_api(*args_for_api_call)
+            perovskite_loading_indicator.value = "_仿真状态: 完成_"
+            return result_text, jv_curve
+        except Exception as e:
+            perovskite_loading_indicator.value = f"_仿真状态: 出错 ({type(e).__name__})_"
+            return f"预测出错: {str(e)}", None
 
-        debounced_perovskite_predict_fn = debounced_predict(perform_prediction_with_status, delay_ms=500)
+    debounced_perovskite_predict_fn = debounced_predict(perform_prediction_with_status, delay_ms=500)
 
-        for control in all_inputs_for_api:
-            control.change(
-                debounced_perovskite_predict_fn,
-                inputs=all_inputs_for_api, # Pass all relevant controls
-                outputs=[perovskite_result_text, perovskite_jv_curve],
-                queue=True,
-                show_progress=False # Debounce handles visual feedback via loading_indicator
-            )
-
-
-        demo_block = gr.Blocks() # Temporary for load, if this is part of a larger Blocks structure, integrate carefully
-        demo_block.load(
-            debounced_perovskite_predict_fn, 
-            inputs=all_inputs_for_api,
+    for control in all_inputs_for_api:
+        control.change(
+            debounced_perovskite_predict_fn,
+            inputs=all_inputs_for_api, # Pass all relevant controls
             outputs=[perovskite_result_text, perovskite_jv_curve],
-            queue=True
+            queue=True,
+            show_progress=False # Debounce handles visual feedback via loading_indicator
         )
-        pass # Omitting auto-load to prevent issues unless explicitly requested. Changes will trigger prediction. 
+
+
+    demo_block = gr.Blocks() # Temporary for load, if this is part of a larger Blocks structure, integrate carefully
+    demo_block.load(
+        debounced_perovskite_predict_fn, 
+        inputs=all_inputs_for_api,
+        outputs=[perovskite_result_text, perovskite_jv_curve],
+        queue=True
+    )
+    pass # Omitting auto-load to prevent issues unless explicitly requested. Changes will trigger prediction. 

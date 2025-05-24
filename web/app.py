@@ -18,20 +18,169 @@ def tech_header():
     <hr style='border:1px solid #1976d2;margin-bottom:0;'>
     """, elem_id="header")
 
-with gr.Blocks(title="太阳能AI助手", theme=gr.themes.Soft(primary_hue="blue", secondary_hue="cyan")) as demo:
+with gr.Blocks(
+    title="太阳能AI助手", 
+    theme=gr.themes.Soft(primary_hue="blue", secondary_hue="cyan"),
+    css="""
+    .sidebar {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-right: 3px solid #1976d2;
+        padding: 15px;
+        min-height: 80vh;
+        border-radius: 8px 0 0 8px;
+    }
+    .nav-button {
+        width: 100%;
+        margin: 8px 0;
+        padding: 15px 20px;
+        text-align: left;
+        border: 2px solid transparent;
+        border-radius: 8px;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 16px;
+        font-weight: 500;
+    }
+    .nav-button:hover {
+        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        border-color: #1976d2;
+        transform: translateX(5px);
+        box-shadow: 0 4px 8px rgba(25, 118, 210, 0.2);
+    }
+    .nav-button.selected {
+        background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+        color: white;
+        border-color: #0d47a1;
+        box-shadow: 0 4px 12px rgba(25, 118, 210, 0.4);
+    }
+    .main-content {
+        padding: 20px;
+        background: white;
+        border-radius: 0 8px 8px 0;
+        min-height: 80vh;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .nav-title {
+        color: #1976d2;
+        text-align: center;
+        margin-bottom: 20px;
+        padding: 15px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    """
+) as demo:
     tech_header()
-    with gr.Tab("💬 AI对话"):
-        build_chat_tab()
-    with gr.Tab("⚡ 硅电池参数预测"):
-        build_solar_tab()
-    with gr.Tab("⏳ 钙钛矿电池老化预测"):
-        build_aging_tab()
-    with gr.Tab("🧪 钙钛矿电池参数预测"):
-        build_perovskite_tab()
-    with gr.Tab("🔷 钙钛矿带隙预测"):
-        build_bandgap_tab()
-    # 其余Tab后续迁移
-    # build_bandgap_tab()
+    
+    with gr.Row():
+        # 左侧导航栏
+        with gr.Column(scale=1, elem_classes="sidebar"):
+            gr.Markdown("### 📋 功能导航", elem_classes="nav-title")
+            
+            # 导航按钮
+            chat_btn = gr.Button("💬 AI对话", elem_classes="nav-button selected")
+            solar_btn = gr.Button("⚡ 硅电池参数预测", elem_classes="nav-button")
+            aging_btn = gr.Button("⏳ 钙钛矿电池老化预测", elem_classes="nav-button")
+            perovskite_btn = gr.Button("🧪 钙钛矿电池参数预测", elem_classes="nav-button")
+            bandgap_btn = gr.Button("🔷 钙钛矿带隙预测", elem_classes="nav-button")
+        
+        # 右侧主内容区域
+        with gr.Column(scale=4, elem_classes="main-content"):
+            # 各个功能页面的容器
+            with gr.Group(visible=True) as chat_container:
+                gr.Markdown("## 💬 AI对话")
+                build_chat_tab()
+            
+            with gr.Group(visible=False) as solar_container:
+                gr.Markdown("## ⚡ 硅电池参数预测")
+                build_solar_tab()
+            
+            with gr.Group(visible=False) as aging_container:
+                gr.Markdown("## ⏳ 钙钛矿电池老化预测")
+                build_aging_tab()
+            
+            with gr.Group(visible=False) as perovskite_container:
+                gr.Markdown("## 🧪 钙钛矿电池参数预测")
+                build_perovskite_tab()
+            
+            with gr.Group(visible=False) as bandgap_container:
+                gr.Markdown("## 🔷 钙钛矿带隙预测")
+                build_bandgap_tab()
+    
+    # 定义页面切换函数
+    def show_chat():
+        return [
+            gr.update(visible=True),   # chat_container
+            gr.update(visible=False),  # solar_container
+            gr.update(visible=False),  # aging_container
+            gr.update(visible=False),  # perovskite_container
+            gr.update(visible=False)   # bandgap_container
+        ]
+    
+    def show_solar():
+        return [
+            gr.update(visible=False),  # chat_container
+            gr.update(visible=True),   # solar_container
+            gr.update(visible=False),  # aging_container
+            gr.update(visible=False),  # perovskite_container
+            gr.update(visible=False)   # bandgap_container
+        ]
+    
+    def show_aging():
+        return [
+            gr.update(visible=False),  # chat_container
+            gr.update(visible=False),  # solar_container
+            gr.update(visible=True),   # aging_container
+            gr.update(visible=False),  # perovskite_container
+            gr.update(visible=False)   # bandgap_container
+        ]
+    
+    def show_perovskite():
+        return [
+            gr.update(visible=False),  # chat_container
+            gr.update(visible=False),  # solar_container
+            gr.update(visible=False),  # aging_container
+            gr.update(visible=True),   # perovskite_container
+            gr.update(visible=False)   # bandgap_container
+        ]
+    
+    def show_bandgap():
+        return [
+            gr.update(visible=False),  # chat_container
+            gr.update(visible=False),  # solar_container
+            gr.update(visible=False),  # aging_container
+            gr.update(visible=False),  # perovskite_container
+            gr.update(visible=True)    # bandgap_container
+        ]
+    
+    # 绑定按钮点击事件
+    chat_btn.click(
+        show_chat,
+        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container]
+    )
+    
+    solar_btn.click(
+        show_solar,
+        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container]
+    )
+    
+    aging_btn.click(
+        show_aging,
+        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container]
+    )
+    
+    perovskite_btn.click(
+        show_perovskite,
+        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container]
+    )
+    
+    bandgap_btn.click(
+        show_bandgap,
+        outputs=[chat_container, solar_container, aging_container, perovskite_container, bandgap_container]
+    )
 
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=5173) 
