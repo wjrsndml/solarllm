@@ -12,14 +12,14 @@ setup_logger()
 def tech_header():
     gr.Markdown("""
     <div style='display:flex;align-items:center;gap:16px;margin-bottom:8px;'>
-        <span style='font-size:2.2em;color:#1976d2;font-weight:bold;'>🔵 太阳能AI助手</span>
+        <span style='font-size:2.2em;color:#1976d2;font-weight:bold;'>🔵 太阳能电池AI设计师</span>
         <span style='font-size:1.1em;color:#1976d2;'>智能预测与分析平台</span>
     </div>
     <hr style='border:1px solid #1976d2;margin-bottom:0;'>
     """, elem_id="header")
 
 with gr.Blocks(
-    title="太阳能AI助手", 
+    title="太阳能电池AI设计师", 
     theme=gr.themes.Soft(primary_hue="blue", secondary_hue="cyan"),
     css="""
     .sidebar {
