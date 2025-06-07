@@ -1,297 +1,344 @@
 "use client";
 
 import { useState } from "react";
-import { Play, Download, RotateCcw, ChevronDown, ChevronUp } from "lucide-react";
+import { Clock, Play, RotateCcw, TrendingDown, AlertTriangle, Info } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import axios from "axios";
 
-export default function AgingTab() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [result, setResult] = useState("");
-  const [agingCurve, setAgingCurve] = useState<string | null>(null);
-  const [status, setStatus] = useState("就绪");
-  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set([0]));
+interface AgingParams {
+  // 环境条件
+  temperature: number;
+  humidity: number;
+  light_intensity: number;
+  
+  // 材料组成
+  MA_ratio: number;
+  FA_ratio: number;
+  Cs_ratio: number;
+  Pb_ratio: number;
+  I_ratio: number;
+  Br_ratio: number;
+  
+  // 器件结构
+  perovskite_thickness: number;
+  ETL_thickness: number;
+  HTL_thickness: number;
+  
+  // 封装参数
+  encapsulation_type: string;
+  UV_filter: boolean;
+  moisture_barrier: boolean;
+  
+  // 测试条件
+  aging_time: number;
+  measurement_interval: number;
+}
 
-  // 简化的参数（只显示最重要的几个分类）
-  const [params, setParams] = useState({
-    // 电池架构
-    cell_architecture: "n-i-p",
-    substrate_type: "Glass",
-    substrate_thickness: 1.1,
-    
-    // ETL参数
-    etl_material: "TiO2",
-    etl_thickness: 0.05,
-    etl_annealing_temp: 450,
-    
-    // 钙钛矿层参数
-    perovskite_composition: "MAPbI3",
-    perovskite_thickness: 0.5,
-    perovskite_bandgap: 1.55,
-    perovskite_annealing_temp: 100,
-    
-    // HTL参数
-    htl_material: "Spiro-OMeTAD",
-    htl_thickness: 0.2,
-    
-    // 背电极
-    back_contact: "Au",
-    back_contact_thickness: 0.1,
-    
-    // 封装
-    encapsulation: "Glass",
-    edge_sealing: "UV-curable polymer",
-    
-    // 初始性能
-    initial_voc: 1.1,
-    initial_jsc: 22.0,
-    initial_ff: 75.0,
-    initial_pce: 18.0,
-    
-    // 稳定性测试条件
-    light_intensity: 100,
+interface AgingResult {
+  success: boolean;
+  degradation_rate?: number;
+  half_life?: number;
+  stability_factors?: {
+    thermal: number;
+    moisture: number;
+    light: number;
+    overall: number;
+  };
+  aging_curve?: Array<{ time: number; efficiency: number; power: number }>;
+  image_url?: string;
+  error?: string;
+  message?: string;
+}
+
+interface ParamConfig {
+  key: keyof AgingParams;
+  label: string;
+  unit: string;
+  type: "number" | "boolean" | "select";
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: string[];
+}
+
+export default function AgingTab() {
+  const [params, setParams] = useState<AgingParams>({
+    // 环境条件
     temperature: 85,
     humidity: 85,
-    atmosphere: "Air",
-    uv_filter: true,
+    light_intensity: 1000,
+    
+    // 材料组成
+    MA_ratio: 0.15,
+    FA_ratio: 0.83,
+    Cs_ratio: 0.02,
+    Pb_ratio: 1.0,
+    I_ratio: 2.55,
+    Br_ratio: 0.45,
+    
+    // 器件结构
+    perovskite_thickness: 500,
+    ETL_thickness: 50,
+    HTL_thickness: 200,
+    
+    // 封装参数
+    encapsulation_type: "EVA",
+    UV_filter: true,
+    moisture_barrier: true,
+    
+    // 测试条件
+    aging_time: 1000,
+    measurement_interval: 24,
   });
 
-  const parameterGroups = [
-    {
-      title: "电池架构与基底",
-      icon: "🏗️",
-      params: [
-        { key: "cell_architecture", label: "电池架构", type: "select", options: ["n-i-p", "p-i-n"], description: "电池结构类型" },
-        { key: "substrate_type", label: "基底材料", type: "select", options: ["Glass", "PET", "ITO"], description: "基底基板材料" },
-        { key: "substrate_thickness", label: "基底厚度 (mm)", type: "number", step: 0.1, description: "基底厚度" },
-      ],
-    },
-    {
-      title: "传输层参数",
-      icon: "⚡",
-      params: [
-        { key: "etl_material", label: "ETL材料", type: "select", options: ["TiO2", "SnO2", "ZnO", "PCBM"], description: "电子传输层材料" },
-        { key: "etl_thickness", label: "ETL厚度 (μm)", type: "number", step: 0.01, description: "电子传输层厚度" },
-        { key: "etl_annealing_temp", label: "ETL退火温度 (°C)", type: "number", step: 10, description: "电子传输层退火温度" },
-        { key: "htl_material", label: "HTL材料", type: "select", options: ["Spiro-OMeTAD", "PTAA", "P3HT", "NiOx"], description: "空穴传输层材料" },
-        { key: "htl_thickness", label: "HTL厚度 (μm)", type: "number", step: 0.01, description: "空穴传输层厚度" },
-      ],
-    },
-    {
-      title: "钙钛矿层参数",
-      icon: "💎",
-      params: [
-        { key: "perovskite_composition", label: "钙钛矿组分", type: "select", options: ["MAPbI3", "FAPbI3", "CsPbI3", "Mixed"], description: "钙钛矿材料组分" },
-        { key: "perovskite_thickness", label: "钙钛矿厚度 (μm)", type: "number", step: 0.05, description: "活性层厚度" },
-        { key: "perovskite_bandgap", label: "带隙 (eV)", type: "number", step: 0.01, description: "材料带隙" },
-        { key: "perovskite_annealing_temp", label: "退火温度 (°C)", type: "number", step: 5, description: "钙钛矿层退火温度" },
-      ],
-    },
-    {
-      title: "电极与封装",
-      icon: "🔌",
-      params: [
-        { key: "back_contact", label: "背电极材料", type: "select", options: ["Au", "Ag", "Al", "Cu"], description: "背面电极材料" },
-        { key: "back_contact_thickness", label: "背电极厚度 (μm)", type: "number", step: 0.01, description: "背面电极厚度" },
-        { key: "encapsulation", label: "封装材料", type: "select", options: ["Glass", "EVA", "POE", "None"], description: "封装保护材料" },
-        { key: "edge_sealing", label: "边缘密封", type: "select", options: ["UV-curable polymer", "Butyl rubber", "Silicone", "None"], description: "边缘密封材料" },
-      ],
-    },
-    {
-      title: "初始性能参数",
-      icon: "📊",
-      params: [
-        { key: "initial_voc", label: "开路电压 (V)", type: "number", step: 0.01, description: "初始开路电压" },
-        { key: "initial_jsc", label: "短路电流密度 (mA/cm²)", type: "number", step: 0.1, description: "初始短路电流密度" },
-        { key: "initial_ff", label: "填充因子 (%)", type: "number", step: 0.1, description: "初始填充因子" },
-        { key: "initial_pce", label: "功率转换效率 (%)", type: "number", step: 0.1, description: "初始效率" },
-      ],
-    },
-    {
-      title: "稳定性测试条件",
-      icon: "🌡️",
-      params: [
-        { key: "light_intensity", label: "光照强度 (mW/cm²)", type: "number", step: 10, description: "测试光照强度" },
-        { key: "temperature", label: "测试温度 (°C)", type: "number", step: 5, description: "环境温度" },
-        { key: "humidity", label: "相对湿度 (%)", type: "number", step: 5, description: "环境湿度" },
-        { key: "atmosphere", label: "测试气氛", type: "select", options: ["Air", "N2", "Ar", "Vacuum"], description: "测试环境气氛" },
-        { key: "uv_filter", label: "UV滤光片", type: "checkbox", description: "是否使用UV滤光片" },
-      ],
-    },
-  ];
+  const [result, setResult] = useState<AgingResult | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleParamChange = (key: string, value: any) => {
-    setParams(prev => ({ ...prev, [key]: value }));
-  };
-
-  const predict = async () => {
+  const handlePredict = async () => {
     setIsLoading(true);
-    setStatus("计算中...");
-    
+    setResult(null);
+
     try {
-      const response = await axios.post("/api/aging/predict", params);
-      setResult(response.data.result);
-      setAgingCurve(response.data.aging_curve);
-      setStatus("完成");
+      console.log('发送钙钛矿老化预测请求:', params);
+      
+      const response = await axios.post('/api/aging/predict', params, {
+        timeout: 60000,
+      });
+
+      console.log('钙钛矿老化预测响应:', response.data);
+      setResult(response.data);
+
     } catch (error) {
-      console.error("Aging prediction error:", error);
-      setResult("预测出错，请检查参数设置");
-      setStatus("出错");
+      console.error('钙钛矿老化预测错误:', error);
+      
+      let errorMessage = '老化预测失败';
+      if (axios.isAxiosError(error)) {
+        if (error.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        } else if (error.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+      }
+
+      setResult({
+        success: false,
+        error: errorMessage
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   const resetParams = () => {
-    // 重置为默认值的逻辑
     setParams({
-      cell_architecture: "n-i-p",
-      substrate_type: "Glass",
-      substrate_thickness: 1.1,
-      etl_material: "TiO2",
-      etl_thickness: 0.05,
-      etl_annealing_temp: 450,
-      perovskite_composition: "MAPbI3",
-      perovskite_thickness: 0.5,
-      perovskite_bandgap: 1.55,
-      perovskite_annealing_temp: 100,
-      htl_material: "Spiro-OMeTAD",
-      htl_thickness: 0.2,
-      back_contact: "Au",
-      back_contact_thickness: 0.1,
-      encapsulation: "Glass",
-      edge_sealing: "UV-curable polymer",
-      initial_voc: 1.1,
-      initial_jsc: 22.0,
-      initial_ff: 75.0,
-      initial_pce: 18.0,
-      light_intensity: 100,
       temperature: 85,
       humidity: 85,
-      atmosphere: "Air",
-      uv_filter: true,
+      light_intensity: 1000,
+      MA_ratio: 0.15,
+      FA_ratio: 0.83,
+      Cs_ratio: 0.02,
+      Pb_ratio: 1.0,
+      I_ratio: 2.55,
+      Br_ratio: 0.45,
+      perovskite_thickness: 500,
+      ETL_thickness: 50,
+      HTL_thickness: 200,
+      encapsulation_type: "EVA",
+      UV_filter: true,
+      moisture_barrier: true,
+      aging_time: 1000,
+      measurement_interval: 24,
     });
-    setResult("");
-    setAgingCurve(null);
-    setStatus("就绪");
+    setResult(null);
   };
 
-  const toggleGroup = (groupIndex: number) => {
-    const newExpanded = new Set(expandedGroups);
-    if (newExpanded.has(groupIndex)) {
-      newExpanded.delete(groupIndex);
+  const updateParam = (key: keyof AgingParams, value: number | string | boolean) => {
+    setParams(prev => ({ ...prev, [key]: value }));
+  };
+
+  const paramGroups: Array<{
+    title: string;
+    icon: string;
+    collapsible: boolean;
+    params: ParamConfig[];
+  }> = [
+    {
+      title: "环境条件",
+      icon: "🌡️",
+      collapsible: true,
+      params: [
+        { key: "temperature", label: "温度", unit: "°C", type: "number", min: 25, max: 150, step: 1 },
+        { key: "humidity", label: "相对湿度", unit: "%", type: "number", min: 0, max: 100, step: 1 },
+        { key: "light_intensity", label: "光照强度", unit: "W/m²", type: "number", min: 0, max: 2000, step: 10 },
+      ]
+    },
+    {
+      title: "钙钛矿组成",
+      icon: "🧪",
+      collapsible: true,
+      params: [
+        { key: "MA_ratio", label: "MA比例", unit: "", type: "number", min: 0, max: 1, step: 0.01 },
+        { key: "FA_ratio", label: "FA比例", unit: "", type: "number", min: 0, max: 1, step: 0.01 },
+        { key: "Cs_ratio", label: "Cs比例", unit: "", type: "number", min: 0, max: 1, step: 0.01 },
+        { key: "Pb_ratio", label: "Pb比例", unit: "", type: "number", min: 0, max: 2, step: 0.01 },
+        { key: "I_ratio", label: "I比例", unit: "", type: "number", min: 0, max: 3, step: 0.01 },
+        { key: "Br_ratio", label: "Br比例", unit: "", type: "number", min: 0, max: 3, step: 0.01 },
+      ]
+    },
+    {
+      title: "器件结构",
+      icon: "🏗️",
+      collapsible: true,
+      params: [
+        { key: "perovskite_thickness", label: "钙钛矿层厚度", unit: "nm", type: "number", min: 100, max: 1000, step: 10 },
+        { key: "ETL_thickness", label: "电子传输层厚度", unit: "nm", type: "number", min: 10, max: 200, step: 5 },
+        { key: "HTL_thickness", label: "空穴传输层厚度", unit: "nm", type: "number", min: 50, max: 500, step: 10 },
+      ]
+    },
+    {
+      title: "封装参数",
+      icon: "📦",
+      collapsible: true,
+      params: [
+        { key: "encapsulation_type", label: "封装材料", unit: "", type: "select", options: ["EVA", "POE", "TPU", "Glass"] },
+        { key: "UV_filter", label: "UV滤光", unit: "", type: "boolean" },
+        { key: "moisture_barrier", label: "防潮层", unit: "", type: "boolean" },
+      ]
+    },
+    {
+      title: "测试条件",
+      icon: "⏱️",
+      collapsible: false,
+      params: [
+        { key: "aging_time", label: "老化时间", unit: "小时", type: "number", min: 100, max: 10000, step: 100 },
+        { key: "measurement_interval", label: "测量间隔", unit: "小时", type: "number", min: 1, max: 168, step: 1 },
+      ]
+    }
+  ];
+
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(new Set([0, 1, 2, 3]));
+
+  const toggleGroup = (index: number) => {
+    const newCollapsed = new Set(collapsedGroups);
+    if (newCollapsed.has(index)) {
+      newCollapsed.delete(index);
     } else {
-      newExpanded.add(groupIndex);
+      newCollapsed.add(index);
     }
-    setExpandedGroups(newExpanded);
-  };
-
-  const renderParamInput = (param: any) => {
-    const value = params[param.key as keyof typeof params];
-    
-    switch (param.type) {
-      case "select":
-        return (
-          <select
-            value={value as string}
-            onChange={(e) => handleParamChange(param.key, e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            {param.options.map((option: string) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-        );
-      case "checkbox":
-        return (
-          <label className="flex items-center">
-            <input
-              type="checkbox"
-              checked={value as boolean}
-              onChange={(e) => handleParamChange(param.key, e.target.checked)}
-              className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-700">启用</span>
-          </label>
-        );
-      case "number":
-      default:
-        return (
-          <input
-            type="number"
-            value={value as number}
-            onChange={(e) => handleParamChange(param.key, parseFloat(e.target.value) || 0)}
-            step={param.step || 1}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="输入数值"
-          />
-        );
-    }
+    setCollapsedGroups(newCollapsed);
   };
 
   return (
     <div className="h-full flex flex-col">
+      {/* 头部区域 */}
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800">⏳ 钙钛矿老化预测</h2>
-          <p className="text-gray-600">预测钙钛矿太阳能电池的稳定性和老化特性</p>
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+            <Clock className="h-6 w-6 text-white" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+              ⏰ 钙钛矿老化预测
+            </h2>
+            <p className="text-gray-600/80">预测钙钛矿太阳能电池在不同环境下的稳定性和寿命</p>
+          </div>
         </div>
+        
         <div className="flex items-center gap-3">
-          <span className={`text-sm px-3 py-1 rounded-full ${
-            status === "计算中..." ? "bg-yellow-100 text-yellow-800" :
-            status === "完成" ? "bg-green-100 text-green-800" :
-            status === "出错" ? "bg-red-100 text-red-800" :
-            "bg-gray-100 text-gray-800"
-          }`}>
-            状态: {status}
-          </span>
-          <button
-            onClick={predict}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-colors"
-          >
-            <Play className="h-4 w-4" />
-            {isLoading ? "计算中..." : "开始预测"}
-          </button>
           <button
             onClick={resetParams}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 bg-white/20 hover:bg-white/30 backdrop-blur-sm rounded-xl border border-white/30 transition-all duration-300"
           >
             <RotateCcw className="h-4 w-4" />
             重置参数
           </button>
+          <button
+            onClick={handlePredict}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
+          >
+            {isLoading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                预测中...
+              </>
+            ) : (
+              <>
+                <Play className="h-4 w-4" />
+                开始预测
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 flex gap-6">
-        <div className="flex-1 space-y-4 overflow-y-auto">
-          {/* 参数输入区域 */}
-          {parameterGroups.map((group, groupIndex) => (
-            <div key={groupIndex} className="bg-gray-50 rounded-lg">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* 参数输入区域 */}
+        <div className="space-y-4 max-h-full overflow-y-auto">
+          {paramGroups.map((group, groupIndex) => (
+            <div key={groupIndex} className="gradient-card rounded-2xl overflow-hidden">
               <button
-                onClick={() => toggleGroup(groupIndex)}
-                className="w-full p-4 flex items-center justify-between text-left hover:bg-gray-100 rounded-lg transition-colors"
+                onClick={() => group.collapsible && toggleGroup(groupIndex)}
+                className={`w-full flex items-center justify-between p-4 ${
+                  group.collapsible ? 'hover:bg-white/10 cursor-pointer' : 'cursor-default'
+                } transition-colors`}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-xl">{group.icon}</span>
-                  <h3 className="font-semibold text-gray-800">{group.title}</h3>
+                  <h3 className="text-lg font-semibold text-gray-800">{group.title}</h3>
                 </div>
-                {expandedGroups.has(groupIndex) ? (
-                  <ChevronUp className="h-5 w-5 text-gray-500" />
-                ) : (
-                  <ChevronDown className="h-5 w-5 text-gray-500" />
+                {group.collapsible && (
+                  <div className={`transform transition-transform ${collapsedGroups.has(groupIndex) ? 'rotate-180' : ''}`}>
+                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
                 )}
               </button>
               
-              {expandedGroups.has(groupIndex) && (
+              {(!group.collapsible || !collapsedGroups.has(groupIndex)) && (
                 <div className="px-4 pb-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {group.params.map((param) => (
-                      <div key={param.key}>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <div key={param.key} className="space-y-2">
+                        <label className="block text-sm font-medium text-gray-700">
                           {param.label}
+                          {param.unit && <span className="text-gray-500 ml-1">({param.unit})</span>}
                         </label>
-                        {renderParamInput(param)}
-                        <p className="text-xs text-gray-500 mt-1">{param.description}</p>
+                        
+                        {param.type === "boolean" ? (
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={params[param.key] as boolean}
+                              onChange={(e) => updateParam(param.key, e.target.checked)}
+                              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                            />
+                            <span className="text-sm text-gray-600">启用</span>
+                          </label>
+                        ) : param.type === "select" ? (
+                          <select
+                            value={params[param.key] as string}
+                            onChange={(e) => updateParam(param.key, e.target.value)}
+                            className="w-full px-3 py-2 bg-white/60 backdrop-blur-sm border border-white/40 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
+                          >
+                            {param.options?.map((option: string) => (
+                              <option key={option} value={option}>{option}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="number"
+                            value={params[param.key] as number}
+                            onChange={(e) => updateParam(param.key, parseFloat(e.target.value) || 0)}
+                            min={param.min}
+                            max={param.max}
+                            step={param.step}
+                            className="w-full px-3 py-2 bg-white/60 backdrop-blur-sm border border-white/40 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -301,49 +348,161 @@ export default function AgingTab() {
           ))}
         </div>
 
-        <div className="w-80 space-y-4">
-          {/* 老化曲线显示 */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-800 mb-3">老化曲线</h3>
-            <div className="h-64 bg-white rounded-lg border border-gray-200 flex items-center justify-center">
-              {agingCurve ? (
-                <img
-                  src={agingCurve}
-                  alt="老化曲线"
-                  className="max-h-full max-w-full object-contain"
-                />
-              ) : (
-                <div className="text-gray-500 text-center">
-                  <div className="w-16 h-16 bg-gray-200 rounded-lg mx-auto mb-2 flex items-center justify-center">
-                    📈
-                  </div>
-                  <p className="text-sm">老化曲线将在这里显示</p>
-                </div>
-              )}
+        {/* 结果显示区域 */}
+        <div className="space-y-6">
+          {/* 预测结果 */}
+          <div className="gradient-card rounded-2xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <TrendingDown className="h-6 w-6 text-green-600" />
+              <h3 className="text-lg font-semibold text-gray-800">老化预测结果</h3>
             </div>
-            {agingCurve && (
-              <button className="w-full mt-2 flex items-center justify-center gap-2 px-3 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-                <Download className="h-4 w-4" />
-                下载图像
-              </button>
+
+            {!result ? (
+              <div className="text-center py-12 text-gray-500">
+                <Clock className="h-16 w-16 mx-auto mb-4 opacity-30" />
+                <p>点击"开始预测"查看老化分析结果</p>
+              </div>
+            ) : result.success ? (
+              <div className="space-y-4">
+                {result.degradation_rate !== undefined && (
+                  <div className="bg-white/40 rounded-lg p-4">
+                    <div className="text-sm text-gray-600">降解速率</div>
+                    <div className="text-2xl font-bold text-red-600">
+                      {(result.degradation_rate * 100).toFixed(2)}% / 1000h
+                    </div>
+                  </div>
+                )}
+                
+                {result.half_life !== undefined && (
+                  <div className="bg-white/40 rounded-lg p-4">
+                    <div className="text-sm text-gray-600">预期半衰期</div>
+                    <div className="text-2xl font-bold text-orange-600">
+                      {Math.round(result.half_life)} 小时
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      约 {(result.half_life / 24 / 365).toFixed(1)} 年
+                    </div>
+                  </div>
+                )}
+
+                {result.stability_factors && (
+                  <div className="space-y-3">
+                    <h4 className="font-medium text-gray-800">稳定性因子分析</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-white/30 rounded-lg p-3">
+                        <div className="text-xs text-gray-600">热稳定性</div>
+                        <div className="text-lg font-semibold text-red-600">
+                          {(result.stability_factors.thermal * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="bg-white/30 rounded-lg p-3">
+                        <div className="text-xs text-gray-600">湿度稳定性</div>
+                        <div className="text-lg font-semibold text-blue-600">
+                          {(result.stability_factors.moisture * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="bg-white/30 rounded-lg p-3">
+                        <div className="text-xs text-gray-600">光稳定性</div>
+                        <div className="text-lg font-semibold text-yellow-600">
+                          {(result.stability_factors.light * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="bg-white/30 rounded-lg p-3">
+                        <div className="text-xs text-gray-600">综合稳定性</div>
+                        <div className="text-lg font-semibold text-green-600">
+                          {(result.stability_factors.overall * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <AlertTriangle className="h-12 w-12 mx-auto mb-3 text-red-500" />
+                <p className="text-red-600 font-medium">预测失败</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  {result.error || result.message || '未知错误'}
+                </p>
+              </div>
             )}
           </div>
 
-          {/* 预测结果 */}
-          <div className="bg-gray-50 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-800 mb-3">预测结果</h3>
-            <div className="bg-white rounded-lg border border-gray-200 p-3 min-h-[200px]">
-              {result ? (
-                <pre className="text-sm text-gray-700 whitespace-pre-wrap">
-                  {result}
-                </pre>
-              ) : (
-                <div className="text-gray-500 text-center py-8">
-                  <p className="text-sm">老化预测结果将在这里显示</p>
-                </div>
-              )}
+          {/* 老化曲线图 */}
+          {result?.success && result.aging_curve && (
+            <div className="gradient-card rounded-2xl p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <Info className="h-6 w-6 text-blue-600" />
+                <h3 className="text-lg font-semibold text-gray-800">老化曲线</h3>
+              </div>
+              
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={result.aging_curve}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                    <XAxis 
+                      dataKey="time" 
+                      stroke="#666"
+                      label={{ value: '时间 (小时)', position: 'insideBottom', offset: -10 }}
+                    />
+                    <YAxis 
+                      stroke="#666"
+                      label={{ value: '效率保持率 (%)', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip 
+                      formatter={(value: any, name: string) => [
+                        `${parseFloat(value).toFixed(2)}${name === 'efficiency' ? '%' : 'W'}`,
+                        name === 'efficiency' ? '效率保持率' : '功率保持率'
+                      ]}
+                      labelFormatter={(value: any) => `时间: ${value} 小时`}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="efficiency" 
+                      stroke="#10b981" 
+                      strokeWidth={2}
+                      dot={false}
+                      name="efficiency"
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="power" 
+                      stroke="#f59e0b" 
+                      strokeWidth={2}
+                      dot={false}
+                      name="power"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* 生成的图片 */}
+          {result?.success && result.image_url && (
+            <div className="gradient-card rounded-2xl p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <Info className="h-6 w-6 text-purple-600" />
+                <h3 className="text-lg font-semibold text-gray-800">老化分析图</h3>
+              </div>
+              
+              <div className="bg-white/20 rounded-lg p-4">
+                <img
+                  src={result.image_url}
+                  alt="钙钛矿老化分析结果"
+                  className="w-full h-auto rounded-lg shadow-lg"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'text-red-500 text-center p-4';
+                    errorDiv.textContent = '图片加载失败';
+                    target.parentNode?.appendChild(errorDiv);
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

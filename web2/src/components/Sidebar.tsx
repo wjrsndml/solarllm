@@ -53,20 +53,20 @@ const navItems = [
 
 export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
   return (
-    <div className="w-80 glass-morphism rounded-2xl p-6 backdrop-blur-xl">
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-            <span className="text-white text-sm font-bold">⚡</span>
+    <div className="w-64 glass-morphism rounded-2xl p-5 backdrop-blur-xl">
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+            <span className="text-white text-xs font-bold">⚡</span>
           </div>
-          <h2 className="text-xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
+          <h2 className="text-lg font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
             功能导航
           </h2>
         </div>
-        <p className="text-sm text-gray-600/80">选择需要使用的AI分析功能</p>
+        <p className="text-xs text-gray-600/80">选择需要使用的AI分析功能</p>
       </div>
       
-      <nav className="space-y-3">
+      <nav className="space-y-2">
         {navItems.map((item, index) => {
           const IconComponent = item.icon;
           const isActive = activeTab === item.id;
@@ -76,7 +76,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={`
-                group w-full text-left p-4 rounded-xl transition-all duration-300 border
+                group w-full text-left p-3 rounded-xl transition-all duration-300 border
                 sidebar-item relative overflow-hidden
                 ${isActive
                   ? "active bg-white/40 border-white/40 shadow-lg scale-[1.02]"
@@ -87,23 +87,23 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
                 animationDelay: `${index * 100}ms`
               }}
             >
-              <div className="relative z-10 flex items-center gap-4">
+              <div className="relative z-10 flex items-center gap-3">
                 <div
                   className={`
-                    p-3 rounded-lg transition-all duration-300
+                    p-2 rounded-lg transition-all duration-300
                     ${isActive
                       ? `bg-gradient-to-br ${item.gradient} text-white shadow-lg`
                       : "bg-white/50 text-gray-600 group-hover:bg-white/70"
                     }
                   `}
                 >
-                  <IconComponent className="h-5 w-5" />
+                  <IconComponent className="h-4 w-4" />
                 </div>
                 
                 <div className="flex-1 min-w-0">
                   <h3
                     className={`
-                      font-semibold transition-colors duration-300 truncate
+                      font-medium transition-colors duration-300 truncate text-sm
                       ${isActive ? "text-gray-900" : "text-gray-800 group-hover:text-gray-900"}
                     `}
                   >
@@ -111,7 +111,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
                   </h3>
                   <p
                     className={`
-                      text-sm transition-colors duration-300 truncate
+                      text-xs transition-colors duration-300 truncate
                       ${isActive ? "text-gray-700" : "text-gray-600 group-hover:text-gray-700"}
                     `}
                   >
@@ -121,7 +121,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 
                 <ChevronRight 
                   className={`
-                    h-4 w-4 transition-all duration-300 flex-shrink-0
+                    h-3 w-3 transition-all duration-300 flex-shrink-0
                     ${isActive 
                       ? "text-gray-700 rotate-90" 
                       : "text-gray-400 group-hover:text-gray-600 group-hover:translate-x-1"
@@ -132,7 +132,7 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 
               {/* 活跃状态指示器 */}
               {isActive && (
-                <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-gradient-to-b from-blue-500 to-purple-600 rounded-r-full"></div>
+                <div className="absolute left-0 top-1/2 transform -translate-y-1/2 w-1 h-6 bg-gradient-to-b from-blue-500 to-purple-600 rounded-r-full"></div>
               )}
             </button>
           );
@@ -140,10 +140,10 @@ export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
       </nav>
 
       {/* 底部装饰 */}
-      <div className="mt-8 pt-6 border-t border-white/20">
+      <div className="mt-6 pt-4 border-t border-white/20">
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-          <span>所有功能模块已就绪</span>
+          <span>功能模块已就绪</span>
         </div>
       </div>
     </div>
