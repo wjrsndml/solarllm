@@ -1,58 +1,240 @@
 "use client";
 
-import { useState } from "react";
-import { Atom, Play, RotateCcw, TrendingUp, AlertCircle, Lightbulb } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Atom, Play, Download, RotateCcw, TrendingUp, AlertTriangle, Lightbulb, Zap } from "lucide-react";
 import axios from "axios";
 
+// 钙钛矿带隙预测参数类型定义，基于web中的实现
 interface BandgapParams {
-  MA_ratio: number;
-  FA_ratio: number;
-  Cs_ratio: number;
-  Pb_ratio: number;
-  Sn_ratio: number;
-  I_ratio: number;
-  Br_ratio: number;
-  Cl_ratio: number;
+  perovskite_type: string;
+  // MAPbIBr specific
+  Br_percentage?: number;
+  // CsMAFAPbIBr specific  
+  Cs_ratio?: number;
+  FA_ratio?: number;
+  I_ratio?: number;
+  // MAFA specific
+  MA_ratio?: number;
+  I_ratio_mafa?: number;
+  // CsFA specific
+  Cs_ratio_csfa?: number;
+  I_ratio_csfa?: number;
 }
 
 interface BandgapResult {
   success: boolean;
   bandgap?: number;
-  composition?: string;
-  stability?: number;
-  absorption_edge?: number;
+  perovskite_type?: string;
   error?: string;
   message?: string;
 }
 
-export default function BandgapTab() {
-  const [params, setParams] = useState<BandgapParams>({
-    MA_ratio: 0.15,
-    FA_ratio: 0.83,
-    Cs_ratio: 0.02,
-    Pb_ratio: 1.0,
-    Sn_ratio: 0.0,
-    I_ratio: 2.55,
-    Br_ratio: 0.45,
-    Cl_ratio: 0.0,
-  });
+interface PerovskiteTypeConfig {
+  name: string;
+  label: string;
+  description: string;
+  formula: string;
+  params: Array<{
+    key: keyof BandgapParams;
+    label: string;
+    min: number;
+    max: number;
+    step: number;
+    default: number;
+    unit?: string;
+    description: string;
+  }>;
+}
 
+export default function BandgapTab() {
+  // 钙钛矿类型配置，与web中保持一致
+  const perovskiteTypes: Record<string, PerovskiteTypeConfig> = {
+    "MAPbIBr": {
+      name: "MAPbIBr",
+      label: "MA铅碘溴钙钛矿",
+      description: "通过调节Br的比例来调控带隙",
+      formula: "CH₃NH₃Pb(I₁₋ₓBrₓ)₃",
+      params: [
+        {
+          key: "Br_percentage",
+          label: "Br 百分比",
+          min: 0,
+          max: 1,
+          step: 0.01,
+          default: 0.5,
+          unit: "0-1",
+          description: "溴离子在卤素离子中的比例，影响材料的带隙宽度"
+        }
+      ]
+    },
+    "CsMAFAPbIBr": {
+      name: "CsMAFAPbIBr",
+      label: "三阳离子铅碘溴钙钛矿",
+      description: "Cs, MA, FA三种阳离子的混合钙钛矿",
+      formula: "(Cs/MA/FA)Pb(I/Br)₃",
+      params: [
+        {
+          key: "Cs_ratio",
+          label: "Cs 比例",
+          min: 0,
+          max: 1,
+          step: 0.01,
+          default: 0.1,
+          unit: "0-1",
+          description: "Cs⁺在阳离子中的比例"
+        },
+        {
+          key: "FA_ratio", 
+          label: "FA 比例",
+          min: 0,
+          max: 1,
+          step: 0.01,
+          default: 0.8,
+          unit: "0-1",
+          description: "FA⁺在阳离子中的比例"
+        },
+        {
+          key: "I_ratio",
+          label: "I 比例",
+          min: 0,
+          max: 1,
+          step: 0.01,
+          default: 0.9,
+          unit: "0-1",
+          description: "I⁻在卤素离子中的比例"
+        }
+      ]
+    },
+    "MAFA": {
+      name: "MAFA",
+      label: "MA-FA混合钙钛矿",
+      description: "MA和FA阳离子的二元混合钙钛矿",
+      formula: "(MA₁₋ₓFAₓ)Pb(I₁₋ᵧBrᵧ)₃",
+      params: [
+        {
+          key: "MA_ratio",
+          label: "MA 比例",
+          min: 0,
+          max: 1,
+          step: 0.01,
+          default: 0.5,
+          unit: "0-1",
+          description: "MA⁺在阳离子中的比例"
+        },
+        {
+          key: "I_ratio_mafa",
+          label: "I 比例",
+          min: 0,
+          max: 1,
+          step: 0.01,
+          default: 0.8,
+          unit: "0-1",
+          description: "I⁻在卤素离子中的比例"
+        }
+      ]
+    },
+    "CsFA": {
+      name: "CsFA",
+      label: "Cs-FA混合钙钛矿",
+      description: "Cs和FA阳离子的二元混合钙钛矿",
+      formula: "(Cs₁₋ₓFAₓ)Pb(I₁₋ᵧBrᵧ)₃",
+      params: [
+        {
+          key: "Cs_ratio_csfa",
+          label: "Cs 比例",
+          min: 0,
+          max: 1,
+          step: 0.01,
+          default: 0.2,
+          unit: "0-1",
+          description: "Cs⁺在阳离子中的比例"
+        },
+        {
+          key: "I_ratio_csfa",
+          label: "I 比例",
+          min: 0,
+          max: 1,
+          step: 0.01,
+          default: 0.7,
+          unit: "0-1",
+          description: "I⁻在卤素离子中的比例"
+        }
+      ]
+    }
+  };
+
+  const [params, setParams] = useState<BandgapParams>({ 
+    perovskite_type: "MAPbIBr",
+    Br_percentage: 0.5
+  });
   const [result, setResult] = useState<BandgapResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [simulationStatus, setSimulationStatus] = useState("就绪");
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isComputingRef = useRef(false);
 
-  const handlePredict = async () => {
-    setIsLoading(true);
+  // 获取当前钙钛矿类型的配置
+  const currentConfig = perovskiteTypes[params.perovskite_type];
+
+  // 初始化默认参数
+  useEffect(() => {
+    const initializeDefaultParams = () => {
+      const config = perovskiteTypes[params.perovskite_type];
+      if (config) {
+        const defaultParams: BandgapParams = { perovskite_type: params.perovskite_type };
+        config.params.forEach(param => {
+          defaultParams[param.key] = param.default;
+        });
+        setParams(defaultParams);
+      }
+    };
+
+    initializeDefaultParams();
+  }, [params.perovskite_type]);
+
+  const handleParamChange = (key: keyof BandgapParams, value: string | number) => {
+    const processedValue = typeof value === 'string' ? parseFloat(value) || 0 : value;
+    setParams(prev => ({ ...prev, [key]: processedValue as any }));
+    
+    // 触发防抖预测
+    debouncedPredict();
+  };
+
+  const handleTypeChange = (newType: string) => {
+    setParams({ perovskite_type: newType });
     setResult(null);
+    setSimulationStatus("就绪");
+  };
 
+  const predict = async () => {
+    if (isComputingRef.current) {
+      return { result: null };
+    }
+
+    setIsLoading(true);
+    setSimulationStatus("计算中...");
+    setResult(null);
+    isComputingRef.current = true;
+    
     try {
       console.log('发送钙钛矿带隙预测请求:', params);
       
-      const response = await axios.post('/api/bandgap/predict', params, {
-        timeout: 60000,
+      const response = await axios.post("/api/bandgap/predict", params, {
+        timeout: 30000,
       });
 
       console.log('钙钛矿带隙预测响应:', response.data);
-      setResult(response.data);
+      
+      // 确保添加success字段
+      const resultData = {
+        success: true,
+        ...response.data
+      };
+      
+      setResult(resultData);
+      setSimulationStatus("完成");
+      
+      return { result: resultData };
 
     } catch (error) {
       console.error('钙钛矿带隙预测错误:', error);
@@ -68,126 +250,76 @@ export default function BandgapTab() {
         }
       }
 
-      setResult({
+      const errorResult = {
         success: false,
         error: errorMessage
-      });
+      };
+
+      setResult(errorResult);
+      setSimulationStatus(`出错 (${error instanceof Error ? error.constructor.name : 'Unknown'})`);
+      
+      return { result: errorResult };
     } finally {
       setIsLoading(false);
+      isComputingRef.current = false;
     }
   };
+
+  // 防抖预测函数
+  const debouncedPredict = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      predict();
+    }, 500); // 使用500ms延迟
+  }, [params]);
+
+  // 清理定时器
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   const resetParams = () => {
-    setParams({
-      MA_ratio: 0.15,
-      FA_ratio: 0.83,
-      Cs_ratio: 0.02,
-      Pb_ratio: 1.0,
-      Sn_ratio: 0.0,
-      I_ratio: 2.55,
-      Br_ratio: 0.45,
-      Cl_ratio: 0.0,
-    });
-    setResult(null);
-  };
-
-  const updateParam = (key: keyof BandgapParams, value: number) => {
-    setParams(prev => ({ ...prev, [key]: value }));
-  };
-
-  // 设置典型组分
-  const setTypicalComposition = (type: string) => {
-    switch (type) {
-      case 'MAPbI3':
-        setParams({
-          MA_ratio: 1.0,
-          FA_ratio: 0.0,
-          Cs_ratio: 0.0,
-          Pb_ratio: 1.0,
-          Sn_ratio: 0.0,
-          I_ratio: 3.0,
-          Br_ratio: 0.0,
-          Cl_ratio: 0.0,
-        });
-        break;
-      case 'FAPbI3':
-        setParams({
-          MA_ratio: 0.0,
-          FA_ratio: 1.0,
-          Cs_ratio: 0.0,
-          Pb_ratio: 1.0,
-          Sn_ratio: 0.0,
-          I_ratio: 3.0,
-          Br_ratio: 0.0,
-          Cl_ratio: 0.0,
-        });
-        break;
-      case 'CsPbI3':
-        setParams({
-          MA_ratio: 0.0,
-          FA_ratio: 0.0,
-          Cs_ratio: 1.0,
-          Pb_ratio: 1.0,
-          Sn_ratio: 0.0,
-          I_ratio: 3.0,
-          Br_ratio: 0.0,
-          Cl_ratio: 0.0,
-        });
-        break;
-      default:
-        break;
+    const config = perovskiteTypes[params.perovskite_type];
+    if (config) {
+      const defaultParams: BandgapParams = { perovskite_type: params.perovskite_type };
+      config.params.forEach(param => {
+        defaultParams[param.key] = param.default;
+      });
+      setParams(defaultParams);
+      setResult(null);
+      setSimulationStatus("就绪");
     }
   };
 
-  // 验证组分比例
-  const validateComposition = () => {
-    const cationSum = params.MA_ratio + params.FA_ratio + params.Cs_ratio;
-    const metalSum = params.Pb_ratio + params.Sn_ratio;
-    const halideSum = params.I_ratio + params.Br_ratio + params.Cl_ratio;
+  // 初始预测（组件加载后）
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      predict();
+    }, 100);
     
-    return {
-      cationValid: Math.abs(cationSum - 1.0) < 0.01,
-      metalValid: Math.abs(metalSum - 1.0) < 0.01,
-      halideValid: Math.abs(halideSum - 3.0) < 0.01,
-      cationSum,
-      metalSum,
-      halideSum
-    };
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 格式化带隙值显示
+  const formatBandgap = (value: number): string => {
+    if (value < 1.0) return `${(value * 1000).toFixed(0)} meV`;
+    return `${value.toFixed(4)} eV`;
   };
 
-  const validation = validateComposition();
-
-  const paramGroups = [
-    {
-      title: "阳离子 (A位)",
-      icon: "🔴",
-      description: "总和应为 1.0",
-      params: [
-        { key: "MA_ratio" as keyof BandgapParams, label: "MA (CH₃NH₃⁺)", min: 0, max: 1, step: 0.01 },
-        { key: "FA_ratio" as keyof BandgapParams, label: "FA (HC(NH₂)₂⁺)", min: 0, max: 1, step: 0.01 },
-        { key: "Cs_ratio" as keyof BandgapParams, label: "Cs⁺", min: 0, max: 1, step: 0.01 },
-      ]
-    },
-    {
-      title: "金属离子 (B位)",
-      icon: "🔵",
-      description: "总和应为 1.0",
-      params: [
-        { key: "Pb_ratio" as keyof BandgapParams, label: "Pb²⁺", min: 0, max: 1, step: 0.01 },
-        { key: "Sn_ratio" as keyof BandgapParams, label: "Sn²⁺", min: 0, max: 1, step: 0.01 },
-      ]
-    },
-    {
-      title: "卤素离子 (X位)",
-      icon: "🟡",
-      description: "总和应为 3.0",
-      params: [
-        { key: "I_ratio" as keyof BandgapParams, label: "I⁻", min: 0, max: 3, step: 0.01 },
-        { key: "Br_ratio" as keyof BandgapParams, label: "Br⁻", min: 0, max: 3, step: 0.01 },
-        { key: "Cl_ratio" as keyof BandgapParams, label: "Cl⁻", min: 0, max: 3, step: 0.01 },
-      ]
-    }
-  ];
+  // 获取带隙颜色
+  const getBandgapColor = (bandgap: number): string => {
+    if (bandgap < 1.2) return "text-red-600";
+    if (bandgap < 1.6) return "text-orange-600";
+    if (bandgap < 2.0) return "text-green-600";
+    return "text-blue-600";
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -199,9 +331,10 @@ export default function BandgapTab() {
           </div>
           <div>
             <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
-              ⚛️ 钙钛矿带隙预测
+              🔬 钙钛矿带隙预测
             </h2>
-            <p className="text-gray-600/80">基于组分比例预测钙钛矿材料的带隙能量</p>
+            <p className="text-gray-600/80">根据钙钛矿类型和组分比例预测材料的带隙宽度</p>
+            <p className="text-sm text-gray-500 italic">仿真状态: {simulationStatus}</p>
           </div>
         </div>
         
@@ -214,8 +347,8 @@ export default function BandgapTab() {
             重置参数
           </button>
           <button
-            onClick={handlePredict}
-            disabled={isLoading || !validation.cationValid || !validation.metalValid || !validation.halideValid}
+            onClick={predict}
+            disabled={isLoading}
             className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-indigo-500 to-blue-500 text-white rounded-xl hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
           >
             {isLoading ? (
@@ -235,139 +368,89 @@ export default function BandgapTab() {
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 参数输入区域 */}
-        <div className="space-y-6">
-          {/* 典型组分按钮 */}
-          <div className="gradient-card rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Lightbulb className="h-6 w-6 text-yellow-600" />
-              <h3 className="text-lg font-semibold text-gray-800">典型组分参考</h3>
-            </div>
-            
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { name: 'MAPbI₃', key: 'MAPbI3', color: 'bg-red-500' },
-                { name: 'FAPbI₃', key: 'FAPbI3', color: 'bg-green-500' },
-                { name: 'CsPbI₃', key: 'CsPbI3', color: 'bg-blue-500' }
-              ].map((comp) => (
-                <button
-                  key={comp.key}
-                  onClick={() => setTypicalComposition(comp.key)}
-                  className={`p-3 text-white rounded-lg hover:opacity-80 transition-all duration-300 ${comp.color}`}
-                >
-                  <div className="text-sm font-medium">{comp.name}</div>
-                </button>
+        <div className="gradient-card rounded-2xl p-6">
+          {/* 钙钛矿类型选择 */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              钙钛矿类型 <span className="text-indigo-600 ml-1 text-xs">(perovskite_type)</span>
+            </label>
+            <select
+              value={params.perovskite_type}
+              onChange={(e) => handleTypeChange(e.target.value)}
+              className="w-full px-4 py-3 bg-gradient-to-r from-indigo-50 to-blue-50 backdrop-blur-sm border-2 border-indigo-200/60 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 transition-all duration-300 text-lg font-medium text-gray-800 hover:border-indigo-300 hover:shadow-md"
+            >
+              {Object.entries(perovskiteTypes).map(([key, config]) => (
+                <option key={key} value={key}>
+                  {config.label} ({config.name})
+                </option>
               ))}
-            </div>
+            </select>
           </div>
 
-          {/* 组分参数 */}
-          {paramGroups.map((group, groupIndex) => (
-            <div key={groupIndex} className="gradient-card rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">{group.icon}</span>
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-800">{group.title}</h3>
-                    <p className="text-sm text-gray-600">{group.description}</p>
-                  </div>
-                </div>
-                
-                {/* 验证状态 */}
-                <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  groupIndex === 0 ? (validation.cationValid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800') :
-                  groupIndex === 1 ? (validation.metalValid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800') :
-                  (validation.halideValid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800')
-                }`}>
-                  {groupIndex === 0 ? `总和: ${validation.cationSum.toFixed(2)}` :
-                   groupIndex === 1 ? `总和: ${validation.metalSum.toFixed(2)}` :
-                   `总和: ${validation.halideSum.toFixed(2)}`}
+          {/* 当前类型信息 */}
+          {currentConfig && (
+            <div className="mb-6 p-4 bg-white/30 backdrop-blur-sm rounded-xl border border-white/20">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-2xl">🧪</span>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">{currentConfig.label}</h3>
+                  <p className="text-sm text-gray-600">{currentConfig.description}</p>
                 </div>
               </div>
               
-              <div className="space-y-4">
-                {group.params.map((param) => (
-                  <div key={param.key} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-gray-700">
-                        {param.label}
-                      </label>
-                      <span className="text-sm text-gray-500">
-                        {params[param.key].toFixed(2)}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="range"
-                        value={params[param.key]}
-                        onChange={(e) => updateParam(param.key, parseFloat(e.target.value))}
-                        min={param.min}
-                        max={param.max}
-                        step={param.step}
-                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
-                      />
-                      <input
-                        type="number"
-                        value={params[param.key]}
-                        onChange={(e) => updateParam(param.key, parseFloat(e.target.value) || 0)}
-                        min={param.min}
-                        max={param.max}
-                        step={param.step}
-                        className="w-20 px-2 py-1 text-sm bg-white/60 backdrop-blur-sm border border-white/40 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-300"
-                      />
-                    </div>
-                  </div>
-                ))}
+              <div className="bg-gray-100/80 rounded-lg p-3">
+                <div className="text-xs text-gray-600 mb-1">分子式</div>
+                <div className="font-mono text-lg text-gray-800">{currentConfig.formula}</div>
               </div>
             </div>
-          ))}
+          )}
+
+          {/* 参数输入 */}
+          {currentConfig && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-2xl">⚙️</span>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">组分参数</h3>
+                  <p className="text-sm text-gray-600">调整下列参数来预测带隙</p>
+                </div>
+              </div>
+
+              {currentConfig.params.map((paramConfig) => {
+                const currentValue = (params[paramConfig.key] as number) ?? paramConfig.default;
+                
+                return (
+                  <div key={paramConfig.key} className="space-y-3 p-4 bg-white/30 backdrop-blur-sm rounded-xl border border-white/20">
+                    <label className="block text-sm font-medium text-gray-700">
+                      {paramConfig.label}
+                      {paramConfig.unit && <span className="text-gray-500 ml-1">({paramConfig.unit})</span>}
+                      <span className="text-indigo-600 ml-1 text-xs">(number)</span>
+                    </label>
+                    
+                    <input
+                      type="number"
+                      value={currentValue}
+                      onChange={(e) => handleParamChange(paramConfig.key, e.target.value)}
+                      min={paramConfig.min}
+                      max={paramConfig.max}
+                      step={paramConfig.step}
+                      className="w-full px-4 py-3 bg-gradient-to-r from-indigo-50 to-blue-50 backdrop-blur-sm border-2 border-indigo-200/60 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 transition-all duration-300 text-lg font-medium text-gray-800 hover:border-indigo-300 hover:shadow-md"
+                    />
+                    
+                    <div className="flex justify-between text-xs text-gray-600">
+                      <span>范围: {paramConfig.min} - {paramConfig.max}</span>
+                      <span>步长: {paramConfig.step}</span>
+                    </div>
+                    <p className="text-xs text-gray-600 leading-relaxed">{paramConfig.description}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* 结果显示区域 */}
         <div className="space-y-6">
-          {/* 组分验证 */}
-          <div className="gradient-card rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <AlertCircle className="h-6 w-6 text-orange-600" />
-              <h3 className="text-lg font-semibold text-gray-800">组分验证</h3>
-            </div>
-
-            <div className="space-y-3">
-              <div className={`flex items-center justify-between p-3 rounded-lg ${
-                validation.cationValid ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-              }`}>
-                <span className="text-sm font-medium">阳离子总和</span>
-                <span className={`text-sm font-bold ${
-                  validation.cationValid ? 'text-green-700' : 'text-red-700'
-                }`}>
-                  {validation.cationSum.toFixed(3)} / 1.000
-                </span>
-              </div>
-              
-              <div className={`flex items-center justify-between p-3 rounded-lg ${
-                validation.metalValid ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-              }`}>
-                <span className="text-sm font-medium">金属离子总和</span>
-                <span className={`text-sm font-bold ${
-                  validation.metalValid ? 'text-green-700' : 'text-red-700'
-                }`}>
-                  {validation.metalSum.toFixed(3)} / 1.000
-                </span>
-              </div>
-              
-              <div className={`flex items-center justify-between p-3 rounded-lg ${
-                validation.halideValid ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-              }`}>
-                <span className="text-sm font-medium">卤素离子总和</span>
-                <span className={`text-sm font-bold ${
-                  validation.halideValid ? 'text-green-700' : 'text-red-700'
-                }`}>
-                  {validation.halideSum.toFixed(3)} / 3.000
-                </span>
-              </div>
-            </div>
-          </div>
-
           {/* 预测结果 */}
           <div className="gradient-card rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -377,56 +460,54 @@ export default function BandgapTab() {
 
             {!result ? (
               <div className="text-center py-12 text-gray-500">
-                <Atom className="h-16 w-16 mx-auto mb-4 opacity-30" />
-                <p>设置正确的组分比例后点击"开始预测"</p>
-                {(!validation.cationValid || !validation.metalValid || !validation.halideValid) && (
-                  <p className="text-sm text-red-500 mt-2">请确保所有组分比例正确</p>
-                )}
+                <Zap className="h-16 w-16 mx-auto mb-4 opacity-30" />
+                <p>点击"开始预测"查看带隙结果</p>
               </div>
-            ) : result.success ? (
+            ) : result.success && result.bandgap !== undefined ? (
               <div className="space-y-4">
-                {result.bandgap !== undefined && (
-                  <div className="bg-gradient-to-r from-indigo-500/20 to-blue-500/20 rounded-lg p-6 border border-indigo-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Atom className="h-6 w-6 text-indigo-600" />
-                      <span className="font-semibold text-indigo-800">预测带隙</span>
-                    </div>
-                    <div className="text-3xl font-bold text-indigo-800">
-                      {result.bandgap.toFixed(3)} eV
-                    </div>
+                <div className="text-center">
+                  <div className="text-6xl font-bold mb-2">
+                    <span className={getBandgapColor(result.bandgap)}>
+                      {formatBandgap(result.bandgap)}
+                    </span>
                   </div>
-                )}
-
-                {result.composition && (
+                  <div className="text-gray-600 text-lg">预测带隙</div>
+                </div>
+                
+                <div className="grid grid-cols-1 gap-4">
                   <div className="bg-white/40 rounded-lg p-4">
-                    <div className="text-sm text-gray-600">化学式</div>
+                    <div className="text-sm text-gray-600">钙钛矿类型</div>
                     <div className="text-lg font-semibold text-gray-800">
-                      {result.composition}
+                      {result.perovskite_type || params.perovskite_type}
                     </div>
                   </div>
-                )}
-
-                {result.stability !== undefined && (
+                  
                   <div className="bg-white/40 rounded-lg p-4">
-                    <div className="text-sm text-gray-600">稳定性评分</div>
+                    <div className="text-sm text-gray-600">带隙分类</div>
                     <div className="text-lg font-semibold text-gray-800">
-                      {(result.stability * 100).toFixed(1)}%
+                      {result.bandgap < 1.2 ? "极窄带隙" : 
+                       result.bandgap < 1.6 ? "窄带隙" : 
+                       result.bandgap < 2.0 ? "中等带隙" : "宽带隙"}
                     </div>
                   </div>
-                )}
-
-                {result.absorption_edge !== undefined && (
-                  <div className="bg-white/40 rounded-lg p-4">
-                    <div className="text-sm text-gray-600">吸收边 (nm)</div>
-                    <div className="text-lg font-semibold text-gray-800">
-                      {result.absorption_edge.toFixed(0)} nm
-                    </div>
+                </div>
+                
+                <div className="bg-gradient-to-r from-indigo-500/20 to-blue-500/20 rounded-lg p-4 border border-indigo-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Lightbulb className="h-5 w-5 text-indigo-600" />
+                    <span className="font-semibold text-indigo-800">应用建议</span>
                   </div>
-                )}
+                  <div className="text-sm text-indigo-800">
+                    {result.bandgap < 1.2 ? "适合近红外应用，如红外探测器" :
+                     result.bandgap < 1.6 ? "适合太阳能电池应用，具有良好的光吸收" :
+                     result.bandgap < 2.0 ? "适合LED和激光器应用" :
+                     "适合紫外探测和高能光子器件"}
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="text-center py-8">
-                <AlertCircle className="h-12 w-12 mx-auto mb-3 text-red-500" />
+                <AlertTriangle className="h-12 w-12 mx-auto mb-3 text-red-500" />
                 <p className="text-red-600 font-medium">预测失败</p>
                 <p className="text-sm text-gray-600 mt-1">
                   {result.error || result.message || '未知错误'}
@@ -435,29 +516,32 @@ export default function BandgapTab() {
             )}
           </div>
 
-          {/* 带隙范围参考 */}
+          {/* 参数说明 */}
           <div className="gradient-card rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-4">
-              <Lightbulb className="h-6 w-6 text-yellow-600" />
-              <h3 className="text-lg font-semibold text-gray-800">带隙范围参考</h3>
+              <Lightbulb className="h-6 w-6 text-amber-600" />
+              <h3 className="text-lg font-semibold text-gray-800">参数说明</h3>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
-                <span className="text-sm font-medium">MAPbI₃</span>
-                <span className="text-sm font-bold text-red-700">~1.55 eV</span>
+            <div className="space-y-3 text-sm text-gray-600">
+              <div className="bg-white/30 rounded-lg p-3">
+                <div className="font-medium text-gray-800 mb-1">MAPbIBr</div>
+                <div>通过调节Br比例控制带隙，Br含量越高带隙越宽</div>
               </div>
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
-                <span className="text-sm font-medium">FAPbI₃</span>
-                <span className="text-sm font-bold text-green-700">~1.48 eV</span>
+              
+              <div className="bg-white/30 rounded-lg p-3">
+                <div className="font-medium text-gray-800 mb-1">CsMAFAPbIBr</div>
+                <div>三阳离子体系，Cs提高稳定性，FA降低带隙，MA平衡性能</div>
               </div>
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <span className="text-sm font-medium">CsPbI₃</span>
-                <span className="text-sm font-bold text-blue-700">~1.73 eV</span>
+              
+              <div className="bg-white/30 rounded-lg p-3">
+                <div className="font-medium text-gray-800 mb-1">MAFA</div>
+                <div>MA-FA混合体系，FA含量越高带隙越窄，稳定性更好</div>
               </div>
-              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-lg border border-purple-200">
-                <span className="text-sm font-medium">MAPbBr₃</span>
-                <span className="text-sm font-bold text-purple-700">~2.25 eV</span>
+              
+              <div className="bg-white/30 rounded-lg p-3">
+                <div className="font-medium text-gray-800 mb-1">CsFA</div>
+                <div>Cs-FA二元体系，结合了Cs的稳定性和FA的窄带隙特性</div>
               </div>
             </div>
           </div>
