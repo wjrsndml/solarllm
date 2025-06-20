@@ -44,7 +44,7 @@ export default function Home() {
       {/* 内容区域 */}
       <div className="relative z-10">
         <Header />
-        <div className="container mx-auto px-6 py-8">
+        <div className="px-6 py-8">
           <div className="flex gap-8 min-h-[calc(100vh-140px)]">
             <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
             <main className="flex-1 glass-morphism rounded-2xl p-8 backdrop-blur-xl">

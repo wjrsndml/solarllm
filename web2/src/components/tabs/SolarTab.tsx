@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Play, Download, RotateCcw, TrendingUp, AlertCircle, Info } from "lucide-react";
 import axios from "axios";
+import AIChat from "@/components/AIChat";
+import TOPConModel from "@/components/TOPConModel";
 
 interface SolarParams {
   Si_thk: number;
@@ -35,15 +37,6 @@ interface PredictionResult {
   message?: string;
 }
 
-interface ParamConfig {
-  key: string;
-  label: string;
-  unit: string;
-  description: string;
-  step: number;
-  showCurrent?: boolean;
-}
-
 export default function SolarTab() {
   const [params, setParams] = useState<SolarParams>({
     Si_thk: 180,
@@ -65,7 +58,6 @@ export default function SolarTab() {
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [simulationStatus, setSimulationStatus] = useState("就绪");
-  const [activeTab, setActiveTab] = useState(0);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isComputingRef = useRef(false);
 
@@ -122,17 +114,72 @@ export default function SolarTab() {
     return value.toString();
   };
 
-  const handleParamChange = (key: keyof SolarParams, value: string) => {
-    const numValue = parseFloat(value) || 0;
-    setParams(prev => ({ ...prev, [key]: numValue }));
+  // AI对话专用的预测函数
+  const predictWithParams = async (simulationParams: SolarParams) => {
+    if (isComputingRef.current) {
+      return { success: false, error: "正在计算中，请等待完成" };
+    }
+
+    setIsLoading(true);
+    setSimulationStatus("计算中...");
+    isComputingRef.current = true;
     
-    // 触发防抖预测
-    debouncedPredict();
+    try {
+      console.log('发送硅电池预测请求:', simulationParams);
+      
+      const response = await axios.post("/api/solar/predict", simulationParams, {
+        timeout: 60000,
+      });
+
+      console.log('硅电池预测响应:', response.data);
+      
+      // 确保添加success字段
+      const resultData = {
+        success: true,
+        ...response.data
+      };
+      
+      // 只有在预测成功时才更新UI状态
+      if (resultData.success) {
+        setParams(simulationParams);
+        setResult(resultData);
+        setSimulationStatus("完成");
+      }
+      
+      return resultData;
+
+    } catch (error) {
+      console.error('硅电池预测错误:', error);
+      
+      let errorMessage = '预测失败';
+      if (axios.isAxiosError(error)) {
+        if (error.response?.data?.error) {
+          errorMessage = error.response.data.error;
+        } else if (error.response?.data?.message) {
+          errorMessage = error.response.data.message;
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+      }
+
+      const errorResult = {
+        success: false,
+        error: errorMessage
+      };
+
+      setSimulationStatus(`出错 (${error instanceof Error ? error.constructor.name : 'Unknown'})`);
+      
+      return errorResult;
+    } finally {
+      setIsLoading(false);
+      isComputingRef.current = false;
+    }
   };
 
+  // 原有的预测函数
   const predict = async () => {
     if (isComputingRef.current) {
-      return { result: null, jvCurve: null };
+      return { success: false, error: "正在计算中，请等待完成" };
     }
 
     setIsLoading(true);
@@ -158,10 +205,7 @@ export default function SolarTab() {
       setResult(resultData);
       setSimulationStatus("完成");
       
-      return {
-        result: resultData,
-        jvCurve: resultData.jv_curve
-      };
+      return resultData;
 
     } catch (error) {
       console.error('硅电池预测错误:', error);
@@ -185,7 +229,7 @@ export default function SolarTab() {
       setResult(errorResult);
       setSimulationStatus(`出错 (${error instanceof Error ? error.constructor.name : 'Unknown'})`);
       
-      return { result: errorResult, jvCurve: null };
+      return errorResult;
     } finally {
       setIsLoading(false);
       isComputingRef.current = false;
@@ -244,46 +288,6 @@ export default function SolarTab() {
     }
   }, [defaultParams]);
 
-  const parameterGroups: { title: string; icon: string; params: ParamConfig[] }[] = [
-    {
-      title: "物理尺寸参数",
-      icon: "📏",
-      params: [
-        { key: "Si_thk", label: "Si 厚度", unit: "μm", description: "硅片主体厚度", step: 1 },
-        { key: "t_SiO2", label: "SiO2 厚度", unit: "nm", description: "隔离氧化层厚度", step: 0.1 },
-        { key: "t_polySi_rear_P", label: "后表面 PolySi 厚度", unit: "μm", description: "背面多晶硅厚度", step: 0.01 },
-      ],
-    },
-    {
-      title: "结与接触参数",
-      icon: "🔗",
-      params: [
-        { key: "front_junc", label: "前表面结深度", unit: "μm", description: "正面结深度", step: 0.1 },
-        { key: "rear_junc", label: "后表面结深度", unit: "μm", description: "背面结深度", step: 0.1 },
-        { key: "resist_rear", label: "后表面电阻", unit: "Ω·cm", description: "背面接触电阻", step: 0.01 },
-      ],
-    },
-    {
-      title: "掺杂浓度",
-      icon: "⚛️",
-      params: [
-        { key: "Nd_top", label: "前表面掺杂浓度", unit: "cm⁻³", description: "正面掺杂区", step: 1e18 },
-        { key: "Nd_rear", label: "后表面掺杂浓度", unit: "cm⁻³", description: "背面掺杂区", step: 1e18 },
-        { key: "Nt_polySi_top", label: "前表面 PolySi 掺杂浓度", unit: "cm⁻³", description: "正面多晶硅", step: 1e18 },
-        { key: "Nt_polySi_rear", label: "后表面 PolySi 掺杂浓度", unit: "cm⁻³", description: "背面多晶硅", step: 1e18 },
-      ],
-    },
-    {
-      title: "界面缺陷密度",
-      icon: "🔬",
-      params: [
-        { key: "Dit_Si_SiOx", label: "Si-SiOx 界面缺陷密度", unit: "cm⁻²", description: "硅/氧化层界面", step: 1e9 },
-        { key: "Dit_SiOx_Poly", label: "SiOx-Poly 界面缺陷密度", unit: "cm⁻²", description: "氧化层/多晶硅界面", step: 1e9 },
-        { key: "Dit_top", label: "顶部界面缺陷密度", unit: "cm⁻²", description: "顶部界面", step: 1e9 },
-      ],
-    },
-  ];
-
   return (
     <div className="h-full flex flex-col">
       {/* 头部区域 */}
@@ -329,101 +333,20 @@ export default function SolarTab() {
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 参数输入区域 - 改为分页式 */}
-        <div className="gradient-card rounded-2xl p-6">
-          {/* 标签页导航 */}
-          <div className="flex border-b border-gray-200/50 mb-6">
-            {parameterGroups.map((group, index) => (
-              <button
-                key={index}
-                onClick={() => setActiveTab(index)}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium rounded-t-lg transition-all duration-300 ${
-                  activeTab === index
-                    ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-500'
-                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50/50'
-                }`}
-              >
-                <span className="text-lg">{group.icon}</span>
-                <span className="hidden sm:inline">{group.title}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* 标签页内容 */}
-          <div className="min-h-[400px]">
-            {parameterGroups.map((group, groupIndex) => (
-              <div
-                key={groupIndex}
-                className={`space-y-4 ${activeTab === groupIndex ? 'block' : 'hidden'}`}
-              >
-                <div className="flex items-center gap-3 mb-6">
-                  <span className="text-3xl">{group.icon}</span>
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-800">{group.title}</h3>
-                    <p className="text-sm text-gray-600">
-                      {groupIndex === 0 && "设置硅电池的物理结构参数"}
-                      {groupIndex === 1 && "配置电池的结深度和接触电阻"}
-                      {groupIndex === 2 && "调整各层的掺杂浓度"}
-                      {groupIndex === 3 && "设置各界面的缺陷密度"}
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 gap-6">
-                  {group.params.map((param) => (
-                    <div key={param.key} className="space-y-3 p-4 bg-white/30 backdrop-blur-sm rounded-xl border border-white/20">
-                      <label className="block text-sm font-medium text-gray-700">
-                        {param.label}
-                        {param.unit && <span className="text-blue-600 ml-1 font-semibold">({param.unit})</span>}
-                      </label>
-                      <input
-                        type="text"
-                        value={formatValueForInput(params[param.key as keyof SolarParams])}
-                        onChange={(e) => handleParamChange(param.key as keyof SolarParams, e.target.value)}
-                        className="w-full px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 backdrop-blur-sm border-2 border-blue-200/60 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-400 transition-all duration-300 text-lg font-medium text-gray-800 hover:border-blue-300 hover:shadow-md"
-                        placeholder="输入数值"
-                      />
-                      <p className="text-sm text-gray-600 leading-relaxed">{param.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* 标签页底部导航 */}
-          <div className="flex justify-between items-center mt-6 pt-4 border-t border-gray-200/50">
-            <button
-              onClick={() => setActiveTab(Math.max(0, activeTab - 1))}
-              disabled={activeTab === 0}
-              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
-            >
-              ← 上一页
-            </button>
-            
-            <div className="flex gap-2">
-              {parameterGroups.map((_, index) => (
-                <div
-                  key={index}
-                  className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                    activeTab === index ? 'bg-blue-500' : 'bg-gray-300'
-                  }`}
-                />
-              ))}
-            </div>
-
-            <button
-              onClick={() => setActiveTab(Math.min(parameterGroups.length - 1, activeTab + 1))}
-              disabled={activeTab === parameterGroups.length - 1}
-              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
-            >
-              下一页 →
-            </button>
-          </div>
+      <div className="flex-1 grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* 左侧：TOPCon电池模型 */}
+        <div>
+          <TOPConModel
+            params={params}
+            onParamChange={(key, value) => {
+              setParams(prev => ({ ...prev, [key]: value }));
+              // 触发防抖预测
+              debouncedPredict();
+            }}
+          />
         </div>
 
-        {/* 结果显示区域 */}
+        {/* 中间：结果显示区域 */}
         <div className="space-y-6">
           {/* 预测结果 */}
           <div className="gradient-card rounded-2xl p-6">
@@ -498,35 +421,36 @@ export default function SolarTab() {
             <div className="gradient-card rounded-2xl p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <Info className="h-6 w-6 text-green-600" />
-                  <h3 className="text-lg font-semibold text-gray-800">J-V特性曲线</h3>
+                  <TrendingUp className="h-6 w-6 text-blue-600" />
+                  <h3 className="text-lg font-semibold text-gray-800">J-V 特性曲线</h3>
                 </div>
                 <button
                   onClick={downloadImage}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 text-sm text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-lg transition-all duration-300"
                 >
                   <Download className="h-4 w-4" />
                   下载图片
                 </button>
               </div>
-              
-              <div className="bg-white/20 rounded-lg p-4">
+              <div className="bg-white/50 rounded-lg p-4">
                 <img
                   src={`data:image/png;base64,${result.jv_curve}`}
-                  alt="硅电池J-V特性曲线"
-                  className="w-full h-auto rounded-lg shadow-lg"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                    const errorDiv = document.createElement('div');
-                    errorDiv.className = 'text-red-500 text-center p-4';
-                    errorDiv.textContent = '图片加载失败';
-                    target.parentNode?.appendChild(errorDiv);
-                  }}
+                  alt="J-V Curve"
+                  className="w-full h-auto max-h-96 object-contain rounded-lg shadow-sm"
                 />
               </div>
             </div>
           )}
+        </div>
+
+        {/* 右侧：AI对话区域 */}
+        <div className="flex flex-col h-full">
+          <AIChat
+            pageType="solar"
+            currentParams={params}
+            onSimulation={predictWithParams}
+            className="flex-1 h-full max-h-[calc(100vh-200px)]"
+          />
         </div>
       </div>
     </div>
