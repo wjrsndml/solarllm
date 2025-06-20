@@ -91,15 +91,23 @@ export default function ChatTab() {
       for (const msg of historyItem.messages) {
         if (msg.role === 'system') continue; // 跳过系统消息
         
+        // 调试日志：显示消息中的图片信息
+        if (msg.images) {
+          console.log('历史消息中发现图片数据:', msg.images);
+        }
+        
         formattedMessages.push({
           role: msg.role,
           content: msg.content,
           timestamp: new Date(msg.timestamp || historyItem.created_at),
           images: msg.images,
-          reasoning: msg.reasoning_content,
+          reasoning: msg.reasoning_content || msg.reasoning,
           context: msg.context
         });
       }
+      
+      console.log('已加载历史对话，格式化后的消息数:', formattedMessages.length);
+      console.log('包含图片的消息数:', formattedMessages.filter(m => m.images && m.images.length > 0).length);
       
       setMessages(formattedMessages);
       setShowHistory(false);
@@ -213,7 +221,7 @@ export default function ChatTab() {
     });
   };
 
-  // 渲染消息内容，支持Markdown图片
+  // 渲染消息内容，支持Markdown图片和单独的images数组
   const renderMessageContent = (content: string, images?: any[]) => {
     // 处理Markdown图片语法
     const parts = content.split(/!\[([^\]]*)\]\(([^)]+)\)/g);
@@ -245,19 +253,68 @@ export default function ChatTab() {
                 alt={altText}
                 className="max-w-full h-auto rounded-lg shadow-lg"
                 onError={(e) => {
+                  console.error('图片加载失败:', imageUrl);
                   const target = e.target as HTMLImageElement;
                   target.style.display = 'none';
-                  // 显示错误信息
-                  const errorDiv = document.createElement('div');
-                  errorDiv.className = 'text-red-500 text-sm p-2 bg-red-50 rounded border';
-                  errorDiv.textContent = `图片加载失败: ${imageUrl}`;
-                  target.parentNode?.appendChild(errorDiv);
                 }}
               />
             </div>
           </div>
         );
       }
+    }
+    
+    // 处理单独的images数组（用于历史对话中的图片）
+    if (images && images.length > 0) {
+      images.forEach((image, index) => {
+        let imageUrl = '';
+        let altText = '';
+        
+        // 处理不同格式的图片数据
+        if (typeof image === 'string') {
+          imageUrl = image;
+          altText = '历史图片';
+        } else if (image && typeof image === 'object') {
+          // 处理包含url_path的图片对象
+          if (image.url_path) {
+            // 构建正确的后端服务器URL (8000端口)
+            // 使用与API调用相同的服务器地址
+            const currentHost = window.location.hostname;
+            const backendBaseUrl = `http://${currentHost}:8000`;
+            imageUrl = image.url_path.startsWith('http') ? image.url_path : `${backendBaseUrl}${image.url_path}`;
+          } else if (image.full_url) {
+            imageUrl = image.full_url;
+          } else if (image.url) {
+            imageUrl = image.url;
+          }
+          
+          altText = image.tool_name || image.alt || image.title || '历史图片';
+        }
+        
+        if (imageUrl) {
+          console.log('历史图片URL:', imageUrl); // 调试日志
+          elements.push(
+            <div key={`history-img-${index}`} className="my-4">
+              <div className="bg-white/10 rounded-lg p-3 border border-white/20">
+                <div className="flex items-center gap-2 mb-2 text-sm text-gray-600">
+                  <ImageIcon className="h-4 w-4" />
+                  <span>{altText}</span>
+                </div>
+                <img
+                  src={imageUrl}
+                  alt={altText}
+                  className="max-w-full h-auto rounded-lg shadow-lg"
+                  onError={(e) => {
+                    console.error('历史图片加载失败:', imageUrl);
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                  }}
+                />
+              </div>
+            </div>
+          );
+        }
+      });
     }
     
     return elements.length > 0 ? elements : content;
