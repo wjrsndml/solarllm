@@ -35,7 +35,7 @@ interface PerovskiteTypeConfig {
   description: string;
   formula: string;
   params: Array<{
-    key: keyof BandgapParams;
+    key: string;
     label: string;
     min: number;
     max: number;
@@ -79,7 +79,7 @@ export default function BandgapTab() {
           min: 0,
           max: 1,
           step: 0.01,
-          default: 0.1,
+          default: 0.05,
           unit: "0-1",
           description: "Cs⁺在阳离子中的比例"
         },
@@ -89,7 +89,7 @@ export default function BandgapTab() {
           min: 0,
           max: 1,
           step: 0.01,
-          default: 0.8,
+          default: 0.46,
           unit: "0-1",
           description: "FA⁺在阳离子中的比例"
         },
@@ -99,7 +99,7 @@ export default function BandgapTab() {
           min: 0,
           max: 1,
           step: 0.01,
-          default: 0.9,
+          default: 0.23,
           unit: "0-1",
           description: "I⁻在卤素离子中的比例"
         }
@@ -117,7 +117,7 @@ export default function BandgapTab() {
           min: 0,
           max: 1,
           step: 0.01,
-          default: 0.5,
+          default: 0.49,
           unit: "0-1",
           description: "MA⁺在阳离子中的比例"
         },
@@ -127,40 +127,40 @@ export default function BandgapTab() {
           min: 0,
           max: 1,
           step: 0.01,
-          default: 0.8,
+          default: 0.88,
           unit: "0-1",
           description: "I⁻在卤素离子中的比例"
         }
       ]
     },
-    "CsFA": {
-      name: "CsFA",
-      label: "Cs-FA混合钙钛矿",
-      description: "Cs和FA阳离子的二元混合钙钛矿",
-      formula: "(Cs₁₋ₓFAₓ)Pb(I₁₋ᵧBrᵧ)₃",
-      params: [
-        {
-          key: "Cs_ratio_csfa",
-          label: "Cs 比例",
-          min: 0,
-          max: 1,
-          step: 0.01,
-          default: 0.2,
-          unit: "0-1",
-          description: "Cs⁺在阳离子中的比例"
-        },
-        {
-          key: "I_ratio_csfa",
-          label: "I 比例",
-          min: 0,
-          max: 1,
-          step: 0.01,
-          default: 0.7,
-          unit: "0-1",
-          description: "I⁻在卤素离子中的比例"
-        }
-      ]
-    }
+    // "CsFA": {
+    //   name: "CsFA",
+    //   label: "Cs-FA混合钙钛矿",
+    //   description: "Cs和FA阳离子的二元混合钙钛矿",
+    //   formula: "(Cs₁₋ₓFAₓ)Pb(I₁₋ᵧBrᵧ)₃",
+    //   params: [
+    //     {
+    //       key: "Cs_ratio_csfa",
+    //       label: "Cs 比例",
+    //       min: 0,
+    //       max: 1,
+    //       step: 0.01,
+    //       default: 0.2,
+    //       unit: "0-1",
+    //       description: "Cs⁺在阳离子中的比例"
+    //     },
+    //     {
+    //       key: "I_ratio_csfa",
+    //       label: "I 比例",
+    //       min: 0,
+    //       max: 1,
+    //       step: 0.01,
+    //       default: 0.7,
+    //       unit: "0-1",
+    //       description: "I⁻在卤素离子中的比例"
+    //     }
+    //   ]
+    // }
   };
 
   const [params, setParams] = useState<BandgapParams>({ 
@@ -183,7 +183,7 @@ export default function BandgapTab() {
       if (config) {
         const defaultParams: BandgapParams = { perovskite_type: params.perovskite_type };
         config.params.forEach(param => {
-          defaultParams[param.key] = param.default;
+          (defaultParams as any)[param.key] = param.default;
         });
         setParams(defaultParams);
       }
@@ -192,9 +192,9 @@ export default function BandgapTab() {
     initializeDefaultParams();
   }, [params.perovskite_type]);
 
-  const handleParamChange = (key: keyof BandgapParams, value: string | number) => {
+  const handleParamChange = (key: string, value: string | number) => {
     const processedValue = typeof value === 'string' ? parseFloat(value) || 0 : value;
-    setParams(prev => ({ ...prev, [key]: processedValue as any }));
+    setParams(prev => ({ ...prev, [key]: processedValue }));
     
     // 触发防抖预测
     debouncedPredict();
@@ -217,9 +217,29 @@ export default function BandgapTab() {
     isComputingRef.current = true;
     
     try {
-      console.log('发送钙钛矿带隙预测请求:', params);
+      // 创建API请求参数，需要进行参数键名映射
+      let apiParams = { ...params };
       
-      const response = await axios.post("/api/bandgap/predict", params, {
+      // 修复MAFA类型的参数映射
+      if (params.perovskite_type === 'MAFA') {
+        apiParams = {
+          perovskite_type: params.perovskite_type,
+          MA_ratio: params.MA_ratio,
+          I_ratio: params.I_ratio_mafa  // 映射为后端期望的I_ratio
+        };
+      }
+      // 修复CsFA类型的参数映射  
+      else if (params.perovskite_type === 'CsFA') {
+        apiParams = {
+          perovskite_type: params.perovskite_type,
+          Cs_ratio: params.Cs_ratio_csfa,  // 映射为后端期望的Cs_ratio
+          I_ratio: params.I_ratio_csfa     // 映射为后端期望的I_ratio
+        };
+      }
+      
+      console.log('发送钙钛矿带隙预测请求:', apiParams);
+      
+      const response = await axios.post("/api/bandgap/predict", apiParams, {
         timeout: 30000,
       });
 
@@ -290,7 +310,7 @@ export default function BandgapTab() {
     if (config) {
       const defaultParams: BandgapParams = { perovskite_type: params.perovskite_type };
       config.params.forEach(param => {
-        defaultParams[param.key] = param.default;
+        (defaultParams as any)[param.key] = param.default;
       });
       setParams(defaultParams);
       setResult(null);
@@ -311,6 +331,61 @@ export default function BandgapTab() {
   const formatBandgap = (value: number): string => {
     if (value < 1.0) return `${(value * 1000).toFixed(0)} meV`;
     return `${value.toFixed(4)} eV`;
+  };
+
+  // 计算对应的波长（nm）
+  const calculateWavelength = (bandgap: number): number => {
+    return 1240 / bandgap; // λ = hc/E = 1240/E(eV) nm
+  };
+
+  // 获取光谱区域描述
+  const getSpectralRegion = (wavelength: number): string => {
+    if (wavelength < 380) return "紫外光";
+    if (wavelength < 450) return "紫光";
+    if (wavelength < 495) return "蓝光";
+    if (wavelength < 570) return "绿光";
+    if (wavelength < 590) return "黄光";
+    if (wavelength < 620) return "橙光";
+    if (wavelength < 750) return "红光";
+    if (wavelength < 1000) return "近红外";
+    if (wavelength < 2500) return "短波红外";
+    return "中红外";
+  };
+
+  // 获取应用建议
+  const getApplicationSuggestion = (bandgap: number): { title: string; description: string; wavelength: number; spectralRegion: string } => {
+    const wavelength = calculateWavelength(bandgap);
+    const spectralRegion = getSpectralRegion(wavelength);
+    
+    if (bandgap < 1.2) {
+      return {
+        title: "近红外/红外光电器件",
+        description: "适合近红外探测器、红外LED、热成像器件等应用",
+        wavelength,
+        spectralRegion
+      };
+    } else if (bandgap < 1.6) {
+      return {
+        title: "太阳能电池优选材料", 
+        description: "理想的太阳能电池材料，具有优异的光吸收性能和载流子传输特性",
+        wavelength,
+        spectralRegion
+      };
+    } else if (bandgap < 2.0) {
+      return {
+        title: "可见光LED和激光器",
+        description: "适合制备可见光LED、激光二极管和光电探测器",
+        wavelength,
+        spectralRegion
+      };
+    } else {
+      return {
+        title: "宽带隙光电器件",
+        description: "适合紫外探测器、高能光子器件和透明导电电极",
+        wavelength,
+        spectralRegion
+      };
+    }
   };
 
   // 获取带隙颜色
@@ -417,7 +492,7 @@ export default function BandgapTab() {
               </div>
 
               {currentConfig.params.map((paramConfig) => {
-                const currentValue = (params[paramConfig.key] as number) ?? paramConfig.default;
+                const currentValue = ((params as any)[paramConfig.key] as number) ?? paramConfig.default;
                 
                 return (
                   <div key={paramConfig.key} className="space-y-3 p-4 bg-white/30 backdrop-blur-sm rounded-xl border border-white/20">
@@ -493,16 +568,41 @@ export default function BandgapTab() {
                 </div>
                 
                 <div className="bg-gradient-to-r from-indigo-500/20 to-blue-500/20 rounded-lg p-4 border border-indigo-200">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-3">
                     <Lightbulb className="h-5 w-5 text-indigo-600" />
-                    <span className="font-semibold text-indigo-800">应用建议</span>
+                    <span className="font-semibold text-indigo-800">光学特性与应用建议</span>
                   </div>
-                  <div className="text-sm text-indigo-800">
-                    {result.bandgap < 1.2 ? "适合近红外应用，如红外探测器" :
-                     result.bandgap < 1.6 ? "适合太阳能电池应用，具有良好的光吸收" :
-                     result.bandgap < 2.0 ? "适合LED和激光器应用" :
-                     "适合紫外探测和高能光子器件"}
-                  </div>
+                  
+                  {(() => {
+                    const suggestion = getApplicationSuggestion(result.bandgap);
+                    return (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-white/40 rounded-lg p-3">
+                            <div className="text-xs text-indigo-700 font-medium">吸收边波长</div>
+                            <div className="text-lg font-bold text-indigo-800">
+                              {suggestion.wavelength.toFixed(1)} nm
+                            </div>
+                          </div>
+                          <div className="bg-white/40 rounded-lg p-3">
+                            <div className="text-xs text-indigo-700 font-medium">光谱区域</div>
+                            <div className="text-lg font-bold text-indigo-800">
+                              {suggestion.spectralRegion}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <div className="font-medium text-indigo-800 mb-1">{suggestion.title}</div>
+                          <div className="text-sm text-indigo-700">{suggestion.description}</div>
+                        </div>
+                        
+                        <div className="text-xs text-indigo-600 bg-white/30 rounded p-2">
+                          💡 提示：波长 λ = 1240/E(eV) nm，该材料可吸收波长小于 {suggestion.wavelength.toFixed(1)} nm 的光子
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             ) : (
