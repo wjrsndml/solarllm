@@ -335,7 +335,7 @@ export default function SolarTab() {
 
       <div className="flex-1 grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* 左侧：TOPCon电池模型 */}
-        <div>
+                  <div>
           <TOPConModel
             params={params}
             onParamChange={(key, value) => {

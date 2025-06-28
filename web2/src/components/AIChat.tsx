@@ -70,6 +70,15 @@ export default function AIChat({ pageType, currentParams, onSimulation, classNam
     const [editedParams, setEditedParams] = useState(params);
     const [showParamModal, setShowParamModal] = useState(false);
 
+    // 确保参数是数字类型
+    useEffect(() => {
+      const numericParams: any = {};
+      Object.entries(params).forEach(([key, value]) => {
+        numericParams[key] = typeof value === 'number' ? value : parseFloat(String(value)) || 0;
+      });
+      setEditedParams(numericParams);
+    }, [params]);
+
     // 格式化数值显示：科学计数法用于大数和小数
     const formatValueForDisplay = (value: number): string => {
       if (value === 0) return "0";
@@ -122,6 +131,16 @@ export default function AIChat({ pageType, currentParams, onSimulation, classNam
       </div>
     );
 
+    const handleConfirm = () => {
+      // 确保所有参数都是数字类型
+      const finalParams: any = {};
+      Object.entries(editedParams).forEach(([key, value]) => {
+        finalParams[key] = typeof value === 'number' ? value : parseFloat(String(value)) || 0;
+      });
+      console.log('确认仿真参数:', finalParams);
+      onConfirm(finalParams);
+    };
+
     return (
       <>
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 mb-4">
@@ -133,6 +152,26 @@ export default function AIChat({ pageType, currentParams, onSimulation, classNam
           <p className="text-sm text-gray-600 mb-4">
             检测到 {Object.keys(params).length} 个参数。您可以使用当前参数直接仿真，或先修改参数再仿真。
           </p>
+          
+          {/* 参数预览 */}
+          <div className="bg-white/60 rounded-lg p-3 mb-4 max-h-32 overflow-y-auto">
+            <div className="text-xs text-gray-500 mb-2">当前参数预览：</div>
+            <div className="grid grid-cols-2 gap-1 text-xs">
+              {Object.entries(editedParams).slice(0, 6).map(([key, value]) => (
+                <div key={key} className="flex justify-between">
+                  <span className="text-gray-600">{key}:</span>
+                  <span className="font-mono text-gray-800">
+                    {formatValueForDisplay(typeof value === 'number' ? value : parseFloat(String(value)) || 0)}
+                  </span>
+                </div>
+              ))}
+              {Object.keys(editedParams).length > 6 && (
+                <div className="col-span-2 text-center text-gray-500">
+                  ... 还有 {Object.keys(editedParams).length - 6} 个参数
+                </div>
+              )}
+            </div>
+          </div>
           
           <div className="flex justify-between gap-2">
             <button
@@ -148,7 +187,7 @@ export default function AIChat({ pageType, currentParams, onSimulation, classNam
               取消
             </button>
             <button
-              onClick={() => onConfirm(editedParams)}
+              onClick={handleConfirm}
               className="px-4 py-2 text-sm text-white bg-blue-500 rounded hover:bg-blue-600 transition-colors"
             >
               确认仿真
@@ -237,13 +276,21 @@ export default function AIChat({ pageType, currentParams, onSimulation, classNam
     if (onSimulation) {
       setIsLoading(true);
       
+      // 添加开始仿真的消息
+      const startMessage: Message = {
+        role: "assistant",
+        content: "正在使用您确认的参数进行仿真计算...",
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, startMessage]);
+      
       try {
         const result = await onSimulation(confirmedParams);
         
         const resultMessage: Message = {
           role: "assistant",
           content: result.success 
-            ? "仿真完成！结果已显示在左侧面板中。" 
+            ? `仿真完成！✨\n\n参数已应用并重新生成结果。您可以在左侧查看更新的TOPCon模型参数，在中间查看新的预测结果和J-V曲线。\n\n${result.predictions ? `转换效率: ${result.predictions.Eff?.toFixed(2)}%` : ''}` 
             : `仿真失败：${result.error || "未知错误"}`,
           timestamp: new Date(),
           error: !result.success
