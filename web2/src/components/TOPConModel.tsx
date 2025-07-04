@@ -58,8 +58,9 @@ export default function TOPConModel({ params, onParamChange }: TOPConModelProps)
   };
 
   // 鼠标移动处理
+  // 使用 pageX/pageY 获取相对于页面的坐标，避免滚动位置影响，同时减少偏移量
   const handleMouseMove = (e: React.MouseEvent) => {
-    setMousePos({ x: e.clientX, y: e.clientY });
+    setMousePos({ x: e.pageX, y: e.pageY });
   };
 
   // 定义电池层组
@@ -77,7 +78,7 @@ export default function TOPConModel({ params, onParamChange }: TOPConModelProps)
     },
     {
       name: "硅片主体",
-      description: "p型硅晶体衬底",
+      description: "n型硅晶体衬底",
       color: "#64748b",
       params: [
         { key: "Si_thk", label: "硅片厚度", unit: "μm" },
@@ -142,7 +143,7 @@ export default function TOPConModel({ params, onParamChange }: TOPConModelProps)
           </div>
           <div>
             <h3 className="text-xl font-semibold text-gray-800">TOPCon电池结构模型</h3>
-            <p className="text-sm text-gray-600">双面P-PERC电池结构 - 点击各部分修改参数</p>
+            <p className="text-sm text-gray-600">点击各部分修改参数</p>
           </div>
         </div>
 
@@ -152,8 +153,6 @@ export default function TOPConModel({ params, onParamChange }: TOPConModelProps)
             {/* 前表面金字塔纹理结构 */}
             <g 
               onClick={() => handleGroupClick(layerGroups[0])}
-              onMouseEnter={() => setHoveredText("前表面系统: ARC钝化层 (SiNₓ) + n⁺发射极 + Ag电极")}
-              onMouseLeave={() => setHoveredText("")}
               className="cursor-pointer"
             >
               {/* 金字塔形状 - 只显示6个，更大 */}
@@ -169,27 +168,77 @@ export default function TOPConModel({ params, onParamChange }: TOPConModelProps)
                     stroke="#2563eb"
                     strokeWidth="1"
                     className="hover:fill-blue-500 transition-colors"
+                    onMouseEnter={() => setHoveredText("金字塔纹理结构")}
+                    onMouseLeave={() => setHoveredText("")}
                   />
                 );
               })}
               
-              {/* 前表面电极 - 一个宽矩形电极占满金字塔间隙 */}
+              {/* 前表面电极 - 左侧电极 */}
               <rect 
-                x="350" 
+                x="150" 
                 y="60" 
-                width="100" 
+                width="80" 
                 height="60" 
                 fill="#C0C0C0" 
                 stroke="#999" 
                 strokeWidth="1"
                 className="hover:fill-gray-300 transition-colors"
+                onMouseEnter={() => setHoveredText("前表面Ag电极 (左)")}
+                onMouseLeave={() => setHoveredText("")}
+              />
+              
+              {/* 前表面电极 - 中间电极 */}
+              <rect 
+                x="360" 
+                y="60" 
+                width="80" 
+                height="60" 
+                fill="#C0C0C0" 
+                stroke="#999" 
+                strokeWidth="1"
+                className="hover:fill-gray-300 transition-colors"
+                onMouseEnter={() => setHoveredText("前表面Ag电极 (中)")}
+                onMouseLeave={() => setHoveredText("")}
+              />
+              
+              {/* 前表面电极 - 右侧电极 */}
+              <rect 
+                x="570" 
+                y="60" 
+                width="80" 
+                height="60" 
+                fill="#C0C0C0" 
+                stroke="#999" 
+                strokeWidth="1"
+                className="hover:fill-gray-300 transition-colors"
+                onMouseEnter={() => setHoveredText("前表面Ag电极 (右)")}
+                onMouseLeave={() => setHoveredText("")}
               />
               
               {/* ARC层 */}
-              <rect x="100" y="120" width="600" height="15" fill="#60a5fa" className="hover:fill-blue-400 transition-colors"/>
+              <rect 
+                x="100" 
+                y="120" 
+                width="600" 
+                height="15" 
+                fill="#60a5fa" 
+                className="hover:fill-blue-400 transition-colors"
+                onMouseEnter={() => setHoveredText("ARC钝化层 (SiNₓ)")}
+                onMouseLeave={() => setHoveredText("")}
+              />
               
               {/* n+发射极 */}
-              <rect x="100" y="135" width="600" height="20" fill="#3b82f6" className="hover:fill-blue-500 transition-colors"/>
+              <rect 
+                x="100" 
+                y="135" 
+                width="600" 
+                height="20" 
+                fill="#3b82f6" 
+                className="hover:fill-blue-500 transition-colors"
+                onMouseEnter={() => setHoveredText("n⁺发射极")}
+                onMouseLeave={() => setHoveredText("")}
+              />
               
               {/* 编辑图标 */}
               <circle cx="680" cy="100" r="12" fill="white" stroke="#3b82f6" strokeWidth="2"/>
@@ -199,7 +248,7 @@ export default function TOPConModel({ params, onParamChange }: TOPConModelProps)
             {/* 硅片主体 */}
             <g 
               onClick={() => handleGroupClick(layerGroups[1])}
-              onMouseEnter={() => setHoveredText(`p型硅衬底 (c-Si) - 厚度: ${formatValue(params.Si_thk)} μm`)}
+              onMouseEnter={() => setHoveredText(`n型硅衬底 (c-Si) - 厚度: ${formatValue(params.Si_thk)} μm`)}
               onMouseLeave={() => setHoveredText("")}
               className="cursor-pointer"
             >
@@ -215,7 +264,7 @@ export default function TOPConModel({ params, onParamChange }: TOPConModelProps)
               <rect x="100" y="155" width="600" height="240" fill="url(#crystal)"/>
               
               <text x="400" y="260" textAnchor="middle" className="text-3xl font-bold fill-white">
-                p型硅衬底 (c-Si)
+                n型硅衬底 (c-Si)
               </text>
               <text x="400" y="285" textAnchor="middle" className="text-lg fill-white">
                 厚度: {formatValue(params.Si_thk)} μm
@@ -229,32 +278,96 @@ export default function TOPConModel({ params, onParamChange }: TOPConModelProps)
             {/* 后表面系统 */}
             <g 
               onClick={() => handleGroupClick(layerGroups[2])}
-              onMouseEnter={() => setHoveredText("后表面系统: p⁺⁺背表面场 + SiO₂隧穿氧化层 + poly-Si钝化接触层 + Al电极")}
-              onMouseLeave={() => setHoveredText("")}
               className="cursor-pointer"
             >
               {/* p++背表面场 */}
-              <rect x="100" y="395" width="600" height="12" fill="#f97316" className="hover:fill-orange-500 transition-colors"/>
+              <rect 
+                x="100" 
+                y="395" 
+                width="600" 
+                height="12" 
+                fill="#f97316" 
+                className="hover:fill-orange-500 transition-colors"
+                onMouseEnter={() => setHoveredText("p⁺⁺背表面场")}
+                onMouseLeave={() => setHoveredText("")}
+              />
               
               {/* SiO2隧穿氧化层 */}
-              <rect x="100" y="407" width="600" height="6" fill="#fbbf24" className="hover:fill-yellow-400 transition-colors"/>
+              <rect 
+                x="100" 
+                y="407" 
+                width="600" 
+                height="6" 
+                fill="#fbbf24" 
+                className="hover:fill-yellow-400 transition-colors"
+                onMouseEnter={() => setHoveredText("SiO₂隧穿氧化层")}
+                onMouseLeave={() => setHoveredText("")}
+              />
               
               {/* poly-Si层 */}
-              <rect x="100" y="413" width="600" height="18" fill="#dc2626" className="hover:fill-red-500 transition-colors"/>
+              <rect 
+                x="100" 
+                y="413" 
+                width="600" 
+                height="18" 
+                fill="#dc2626" 
+                className="hover:fill-red-500 transition-colors"
+                onMouseEnter={() => setHoveredText("poly-Si钝化接触层")}
+                onMouseLeave={() => setHoveredText("")}
+              />
               
               {/* 后钝化层 */}
-              <rect x="100" y="431" width="600" height="10" fill="#a855f7" className="hover:fill-purple-500 transition-colors"/>
-              
-              {/* 后表面电极 - 一个宽矩形电极 */}
               <rect 
-                x="350" 
+                x="100" 
+                y="431" 
+                width="600" 
+                height="10" 
+                fill="#a855f7" 
+                className="hover:fill-purple-500 transition-colors"
+                onMouseEnter={() => setHoveredText("后钝化层")}
+                onMouseLeave={() => setHoveredText("")}
+              />
+              
+              {/* 后表面电极 - 左侧电极 */}
+              <rect 
+                x="150" 
                 y="441" 
-                width="100" 
+                width="80" 
                 height="25" 
                 fill="#666" 
                 stroke="#444" 
                 strokeWidth="1"
                 className="hover:fill-gray-500 transition-colors"
+                onMouseEnter={() => setHoveredText("后表面Ag电极 (左)")}
+                onMouseLeave={() => setHoveredText("")}
+              />
+              
+              {/* 后表面电极 - 中间电极 */}
+              <rect 
+                x="360" 
+                y="441" 
+                width="80" 
+                height="25" 
+                fill="#666" 
+                stroke="#444" 
+                strokeWidth="1"
+                className="hover:fill-gray-500 transition-colors"
+                onMouseEnter={() => setHoveredText("后表面Ag电极 (中)")}
+                onMouseLeave={() => setHoveredText("")}
+              />
+              
+              {/* 后表面电极 - 右侧电极 */}
+              <rect 
+                x="570" 
+                y="441" 
+                width="80" 
+                height="25" 
+                fill="#666" 
+                stroke="#444" 
+                strokeWidth="1"
+                className="hover:fill-gray-500 transition-colors"
+                onMouseEnter={() => setHoveredText("后表面Ag电极 (右)")}
+                onMouseLeave={() => setHoveredText("")}
               />
               
               {/* 编辑图标 */}
@@ -269,8 +382,8 @@ export default function TOPConModel({ params, onParamChange }: TOPConModelProps)
           <div 
             className="fixed z-50 bg-black text-white px-3 py-2 rounded-lg text-sm max-w-xs pointer-events-none"
             style={{
-              left: mousePos.x + 10,
-              top: mousePos.y - 10,
+              left: mousePos.x-200,
+              top: mousePos.y-200,
             }}
           >
             {hoveredText}

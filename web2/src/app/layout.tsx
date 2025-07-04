@@ -6,8 +6,8 @@ import { ThemeProvider } from "@/components/theme-provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "太阳能电池AI设计师",
-  description: "智能预测与分析平台",
+  title: "SOLARAI-X",
+  description: "太阳能电池智能预测与分析平台",
 };
 
 export default function RootLayout({
