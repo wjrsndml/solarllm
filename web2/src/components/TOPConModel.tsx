@@ -142,7 +142,7 @@ export default function TOPConModel({ params, onParamChange }: TOPConModelProps)
             <Settings className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h3 className="text-xl font-semibold text-gray-800">TOPCon电池结构模型</h3>
+            <h3 className="text-xl font-semibold text-gray-800">硅电池结构模型</h3>
             <p className="text-sm text-gray-600">点击各部分修改参数</p>
           </div>
         </div>

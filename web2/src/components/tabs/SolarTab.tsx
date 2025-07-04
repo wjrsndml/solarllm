@@ -58,8 +58,10 @@ export default function SolarTab() {
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [simulationStatus, setSimulationStatus] = useState("就绪");
+  const [progress, setProgress] = useState(0);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isComputingRef = useRef(false);
+  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 加载默认参数
   useEffect(() => {
@@ -114,6 +116,35 @@ export default function SolarTab() {
     return value.toString();
   };
 
+  // 模拟进度条更新
+  const simulateProgress = () => {
+    setProgress(0);
+    let currentProgress = 0;
+    
+    const updateProgress = () => {
+      currentProgress += Math.random() * 15 + 5; // 每次增加5-20%
+      if (currentProgress >= 100) {
+        currentProgress = 100;
+        setProgress(100);
+        return;
+      }
+      
+      setProgress(currentProgress);
+      progressTimerRef.current = setTimeout(updateProgress, 200 + Math.random() * 300); // 200-500ms间隔
+    };
+    
+    updateProgress();
+  };
+
+  // 停止进度条
+  const stopProgress = () => {
+    if (progressTimerRef.current) {
+      clearTimeout(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+    setProgress(0);
+  };
+
   // AI对话专用的预测函数
   const predictWithParams = async (simulationParams: SolarParams) => {
     if (isComputingRef.current) {
@@ -122,6 +153,7 @@ export default function SolarTab() {
 
     setIsLoading(true);
     setSimulationStatus("计算中...");
+    simulateProgress(); // 开始进度条
     isComputingRef.current = true;
     
     try {
@@ -172,6 +204,7 @@ export default function SolarTab() {
       return errorResult;
     } finally {
       setIsLoading(false);
+      stopProgress(); // 停止进度条
       isComputingRef.current = false;
     }
   };
@@ -185,6 +218,7 @@ export default function SolarTab() {
     setIsLoading(true);
     setSimulationStatus("计算中...");
     setResult(null);
+    simulateProgress(); // 开始进度条
     isComputingRef.current = true;
     
     try {
@@ -232,6 +266,7 @@ export default function SolarTab() {
       return errorResult;
     } finally {
       setIsLoading(false);
+      stopProgress(); // 停止进度条
       isComputingRef.current = false;
     }
   };
@@ -252,6 +287,9 @@ export default function SolarTab() {
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
+      }
+      if (progressTimerRef.current) {
+        clearTimeout(progressTimerRef.current);
       }
     };
   }, []);
@@ -302,6 +340,21 @@ export default function SolarTab() {
             </h2>
             <p className="text-gray-600/80">通过调整参数预测硅太阳能电池性能</p>
             <p className="text-sm text-gray-500 italic">仿真状态: {simulationStatus}</p>
+            {/* 进度条 */}
+            {isLoading && (
+              <div className="mt-2">
+                <div className="flex items-center gap-2 text-xs text-gray-600 mb-1">
+                  <span>仿真进度</span>
+                  <span>{Math.round(progress)}%</span>
+                </div>
+                <div className="w-48 bg-gray-200 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${progress}%` }}
+                  ></div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         
@@ -335,7 +388,7 @@ export default function SolarTab() {
 
       <div className="flex-1 grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* 左侧：TOPCon电池模型 */}
-                  <div>
+        <div className="h-[800px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
           <TOPConModel
             params={params}
             onParamChange={(key, value) => {
@@ -347,7 +400,7 @@ export default function SolarTab() {
         </div>
 
         {/* 中间：结果显示区域 */}
-        <div className="space-y-6">
+        <div className="h-[800px] space-y-6">
           {/* 预测结果 */}
           <div className="gradient-card rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -444,12 +497,12 @@ export default function SolarTab() {
         </div>
 
         {/* 右侧：AI对话区域 */}
-        <div className="flex flex-col h-full">
+        <div className="h-[800px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
           <AIChat
             pageType="solar"
             currentParams={params}
             onSimulation={predictWithParams}
-            className="flex-1 h-full max-h-[calc(100vh-200px)]"
+            className="h-full"
           />
         </div>
       </div>
