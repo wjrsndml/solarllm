@@ -1,17 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-// 获取后端API的基础URL
-function getApiBaseUrl() {
-  // 如果有环境变量，使用环境变量
-  if (process.env.API_BASE_URL) {
-    return process.env.API_BASE_URL;
-  }
-  
-  // 获取服务器的实际IP地址，而不是localhost
-  // 你需要替换这里的IP为你的服务器实际IP
-  const serverIP = process.env.SERVER_IP || '10.10.20.62'; // 从你的终端输出中看到的Network IP
-  return `http://${serverIP}:8000/api`;
-}
+import { getApiBaseUrl } from '@/lib/ip-utils';
 
 export async function POST(request: NextRequest) {
   try {

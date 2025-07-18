@@ -1,14 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-
-// 获取后端API的基础URL
-function getApiBaseUrl() {
-  if (process.env.API_BASE_URL) {
-    return process.env.API_BASE_URL;
-  }
-  
-  const serverIP = process.env.SERVER_IP || '10.10.20.62';
-  return `http://${serverIP}:8000/api`;
-}
+import { getApiBaseUrl } from '@/lib/ip-utils';
 
 export async function POST(request: NextRequest) {
   try {
